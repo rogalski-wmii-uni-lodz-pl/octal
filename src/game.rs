@@ -130,128 +130,94 @@ mod test {
     fn test_game_to_rules() {
         let rules = rules_from_str("0.034");
 
-        assert_eq!(rules.len(), 4);
         assert_eq!(
-            rules[0],
-            Rule {
-                all: false,
-                some: false,
-                divide: false
-            }
-        );
-        assert_eq!(
-            rules[1],
-            Rule {
-                all: false,
-                some: false,
-                divide: false
-            }
-        );
-        assert_eq!(
-            rules[2],
-            Rule {
-                all: true,
-                some: true,
-                divide: false
-            }
-        );
-        assert_eq!(
-            rules[3],
-            Rule {
-                all: false,
-                some: false,
-                divide: true
-            }
+            rules,
+            vec![
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: false,
+                },
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: false,
+                },
+                Rule {
+                    all: true,
+                    some: true,
+                    divide: false,
+                },
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: true,
+                },
+            ]
         );
 
         let rules = rules_from_str("0.012345670");
 
-        assert_eq!(rules.len(), 10);
         assert_eq!(
-            rules[0],
-            Rule {
-                all: false,
-                some: false,
-                divide: false
-            }
-        );
-        assert_eq!(
-            rules[1],
-            Rule {
-                all: false,
-                some: false,
-                divide: false
-            }
-        );
-        assert_eq!(
-            rules[2],
-            Rule {
-                all: true,
-                some: false,
-                divide: false
-            }
-        );
-        assert_eq!(
-            rules[3],
-            Rule {
-                all: false,
-                some: true,
-                divide: false
-            }
-        );
-        assert_eq!(
-            rules[4],
-            Rule {
-                all: true,
-                some: true,
-                divide: false
-            }
-        );
-        assert_eq!(
-            rules[5],
-            Rule {
-                all: false,
-                some: false,
-                divide: true
-            }
-        );
-        assert_eq!(
-            rules[6],
-            Rule {
-                all: true,
-                some: false,
-                divide: true
-            }
-        );
-        assert_eq!(
-            rules[7],
-            Rule {
-                all: false,
-                some: true,
-                divide: true
-            }
-        );
-        assert_eq!(
-            rules[8],
-            Rule {
-                all: true,
-                some: true,
-                divide: true
-            }
-        );
-        assert_eq!(
-            rules[9],
-            Rule {
-                all: false,
-                some: false,
-                divide: false
-            }
+            rules,
+            vec![
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: false,
+                },
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: false,
+                },
+                Rule {
+                    all: true,
+                    some: false,
+                    divide: false
+                },
+                Rule {
+                    all: false,
+                    some: true,
+                    divide: false,
+                },
+                Rule {
+                    all: true,
+                    some: true,
+                    divide: false,
+                },
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: true,
+                },
+                Rule {
+                    all: true,
+                    some: false,
+                    divide: true,
+                },
+                Rule {
+                    all: false,
+                    some: true,
+                    divide: true,
+                },
+                Rule {
+                    all: true,
+                    some: true,
+                    divide: true,
+                },
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: false,
+                },
+            ]
         );
     }
 
     /// initial values taken from Achim Flammenkamp webpage:
     /// http://wwwhomes.uni-bielefeld.de/achim/octal.html
-    static GAMES_NIMBERS: phf::Map<&'static str, [usize;16] > = phf_map! {
+    static GAMES_NIMBERS: phf::Map<&'static str, [usize; 16]> = phf_map! {
         "0.004" =>  [0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 0, 3, 3, 3],
         "0.005" =>  [0, 0, 0, 1, 0, 1, 1, 2, 2, 2, 0, 3, 3, 4, 1, 1],
         "0.006" =>  [0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 3, 3, 1, 1, 1],
@@ -378,7 +344,6 @@ mod test {
                 }
                 seen.set_elements(0);
             }
-
 
             assert_eq!(g, res);
         }
