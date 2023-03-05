@@ -1,6 +1,4 @@
 use bitvec::prelude::*;
-use phf::phf_map;
-
 pub const UNSET: usize = usize::MAX;
 
 /// Rule represents possible moves from a position n after removing some i tokens are removed from a heap
@@ -122,8 +120,137 @@ pub fn make_bitset(largest: usize) -> BitVec<u64, Msb0> {
     bitvec!(u64, Msb0; 0; bits)
 }
 
+/// Compute the nimber g[n] leveraging the sparce space phenonmenon, under the following
+/// assumptions:
+/// * g[0..n] were computed correctly, accodring to the rules of some octal game,
+/// * n is at least rules.len(),
+/// * rares is a binary vector which in which a set bit at position i signifies that i is a member
+/// of R
+/// * the rares vector represents a correct decmposition into R and C sets (that is values
+/// from g are decomposed into two mutually exclusive sets R and C such that for all x, y in R. x ^
+/// y in R, and for all x, y in C, x ^ y in R, and for all x in R, y in C, x ^ y in C).
+/// * rare_idx_and_nimber is a vector in which contains all pairs (index, nimber) for nimbers from g
+/// such that rares[nimber] is true (in python terms: rare_idx_and_nimber = [(index,nimber) for
+/// nimber in g if rares[nimber]]).
+///
+/// The sparse space phenomenon is an observeable phenomenon in at least some octal games, where
+/// the set of nimbers is divisible into two sets: the common (C) and the rare (R) sets, such that:
+/// * for all x, y in R. x ^ y in R,
+/// * for all x, y in C, x ^ y in R,
+/// * for all x in R, y in C, x ^ y in C.
+/// Since most successsors of a position are in the form x ^ y where both x and y are common, then
+/// a position in an octal game is more likely to *not* have a rare value.
+/// It is therefore worthwhile to first check the values of all successsors in the from x ^ y,
+/// where x is rare.
+/// Since according to the Sprague-Grundy theorem, the nim-value of a position `n` is the smallest
+/// natural number such, that is not the nim-value of `n`'s successors, this eliminates all possible
+/// common values from the set of possible values of the position `n`.
+/// The most likely candidate for the  nim-value of `n` is therefore the smallest common value, or a
+/// new rare value (but this is unlikely).
+/// To prove that it is the common value, we need to iterate through the unchecked successors, and
+/// eliminate rare values smaller than the candidate.
+/// If this is successful, then the nim-value of `n` is the candidate.
+/// If this is unsuccessful, then the nim-value of `n` is rare.
+///
+/// The advantage of this algorithm is that if number of elements of R is small (if values in R
+/// appear in g at most some constant amount of times), then the algorithm approaches a linear time
+/// complexity.  This is especially important, since the time complexity of the naive approach is
+/// quadratic.
+///
+/// Note the following observation made by dr Piotr Beling, that this algorithm works also when the
+/// chosen R and C do not correctly contain infrequent and frequent values in g, but as long as the
+/// two sents fulfil the criteria outlined above, the algorithm works correctly (although it may
+/// work even slower than the naive).  For instance, if we assume that all values are in R, and C
+/// is an empty set, then this algorithm still correctly identifies nimbers.
+///
+pub fn rc(
+    rules: &Vec<Rule>,
+    g: &Vec<usize>,
+    n: usize,
+    seen: &mut BitVec<u64, Msb0>,
+    rares: &BitVec<u64, Msb0>,
+    rare_idx_and_nimber: &Vec<(usize, usize)>,
+) -> usize {
+    // set the non-xor values
+    for i in 1..rules.len() {
+        if rules[i].some {
+            seen.set(g[n - i] as usize, true);
+        }
+    }
+
+    // set an obvious 0, if the game has a dividing move to any pair (x, x)
+    for i in 1..rules.len() {
+        if rules[i].divide && (n - i) & 1 == 0 {
+            seen.set(0, true);
+            break;
+        }
+    }
+
+    // iterate over x ^ y such that x is in R
+    for (idx, x) in rare_idx_and_nimber.iter() {
+        for i in 1..rules.len() {
+            if rules[i].divide {
+                if n > idx + i {
+                    let s = (x ^ g[n - i - idx]) as usize;
+                    seen.set(s, true);
+                }
+            }
+        }
+    }
+
+    // find the smallest common value
+    let mut first_common = 0;
+    for i in 0..seen.len() {
+        if !seen[i] && !rares[i] {
+            first_common = i;
+            break;
+        }
+    }
+
+    let mut mex = bitvec!(u64, Msb0; 0; first_common + 1);
+    for i in 0..first_common {
+        // seen[first_common] is always false,
+        // so we do not need to se it in seen2
+        mex.set(i, seen[i]);
+    }
+
+    // calculate how many unset rare values in mex remain
+    let mut remaining_unset = mex.count_zeros() - 1; // -1 for seen2[first_common]
+
+    // iterate over all x ^ y, including the previously checked
+    // break early when all rare values smaller than first_common are set
+    for i in 1..rules.len() {
+        if remaining_unset == 0 {
+            break;
+        }
+
+        if rules[i].divide {
+            for j in 1..(n - i) / 2 {
+                let a = g[j];
+                let b = g[n - i - j];
+                let loc = (a ^ b) as usize;
+
+                if loc < first_common && !mex[loc] {
+                    // a rare value smaller than first_common and not previously observed found
+                    mex.set(loc, true);
+                    remaining_unset -= 1;
+                    if remaining_unset == 0 {
+                        // all smaller values than first_common found, the value is the smallest
+                        // not observed common
+                        return first_common;
+                        // break
+                    }
+                }
+            }
+        }
+    }
+
+    mex.first_zero().unwrap()
+}
+
 #[cfg(test)]
 mod test {
+    use phf::phf_map;
     use super::*;
 
     #[test]
@@ -348,4 +475,51 @@ mod test {
             assert_eq!(g, res);
         }
     }
+
+    #[test]
+    fn test_rc_with_empty_common() {
+        for (rules_str, res) in GAMES_NIMBERS.into_iter() {
+            let rules = rules_from_str(rules_str);
+
+            let max = 16;
+
+            let mut g = vec![UNSET; max];
+
+            initialize(&rules, &mut g);
+
+            let first_uninitialized = rules.len();
+
+            let mut largest = 2;
+
+            for n in 1..first_uninitialized {
+                largest = std::cmp::max(g[n], largest)
+            }
+
+            let mut seen = make_bitset(largest);
+            let mut rares = make_bitset(largest);
+
+            let mut rare_idx_and_nimber = vec![];
+            for (i, &x) in g[1..first_uninitialized].iter().enumerate() {
+                rare_idx_and_nimber.push((i + 1, x));
+                rares.set(x, true);
+            }
+
+            for n in first_uninitialized..max {
+                g[n] = rc(&rules, &g, n, &mut seen, &rares, &rare_idx_and_nimber);
+                rare_idx_and_nimber.push((n, g[n]));
+                if g[n] > largest {
+                    largest = g[n];
+                    seen = make_bitset(largest);
+                    rares = make_bitset(largest);
+                    for i in 1..=n {
+                        rares.set(g[i], true);
+                    }
+                }
+                seen.set_elements(0);
+            }
+
+            assert_eq!(g, res);
+        }
+    }
+
 }
