@@ -225,7 +225,7 @@ pub fn rc(
         }
 
         if rules[i].divide {
-            for j in 1..(n - i) / 2 {
+            for j in 1..=(n - i) / 2 {
                 let a = g[j];
                 let b = g[n - i - j];
                 let loc = (a ^ b) as usize;
