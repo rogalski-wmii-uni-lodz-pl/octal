@@ -1,3 +1,5 @@
+use std::{collections::HashSet, ops::BitXor};
+
 use bitvec::prelude::*;
 pub const UNSET: usize = usize::MAX;
 
@@ -246,6 +248,71 @@ pub fn rc(
     }
 
     mex.first_zero().unwrap()
+}
+
+/// Generate a bit vector of rare values, maximizing the sum of unset frequencies.
+///
+/// # Arguments
+/// * `freq` - a vector of frequencies of nimbers (freq[x] is the frequency of nimber x in some
+/// sequence of nimbers for which we want to generate a bit vector of rare values.
+///
+/// The bitset has to fulfil the following criteria:
+/// * for all set bit x, y in rares  x ^ y is also set,
+/// * for all unset bits x, y in rares, x ^ y is set,
+/// * for all set bits x and unset bits y in C, x ^ y in unset.
+/// while at the same time maximizing the sum of freq[x] if rares[x] is unset.
+///
+pub fn gen_rares(freq: &Vec<usize>) -> BitVec<u64, Msb0> {
+    let mut r = HashSet::new();
+    let mut c = HashSet::new();
+    let mut vals : Vec<(usize, usize)> = freq.iter().map(|&e| e).enumerate().collect();
+    vals.sort_by_key(|(_, f)| *f);
+    r.insert(0);
+
+    for (x, _) in vals {
+        if r.contains(&x) || c.contains(&x) {
+            continue
+        } else {
+            c.insert(x);
+            let mut inserted = true;
+            while inserted {
+                inserted = false;
+                for &c1 in c.iter() {
+                    for &c2 in c.iter() {
+                        inserted |= r.insert(c1.bitxor(c2));
+                    }
+                }
+
+                let mut new_r = r.to_owned();
+
+                for &r1 in r.iter() {
+                    for &r2 in r.iter() {
+                        if r1 != 0 && r2 != 0 && r1 != r2 {
+                            inserted |= new_r.insert(r1.bitxor(r2));
+                        }
+                    }
+                }
+
+                r = new_r;
+
+                let mut new_c = c.to_owned();
+
+                for &r1 in r.iter() {
+                    for &c1 in c.iter() {
+                        inserted |= new_c.insert(r1.bitxor(c1));
+                    }
+                }
+
+                c = new_c;
+            }
+        }
+    }
+
+    let mut rares = make_bitset(freq.len());
+    for &x in r.iter() {
+        rares.set(x, true);
+    }
+    rares
 }
 
 #[cfg(test)]
@@ -519,6 +586,68 @@ mod test {
             }
 
             assert_eq!(g, res);
+        }
+    }
+
+    #[test]
+    fn test_gen_rares() {
+        let rules = rules_from_str("0.034");
+
+        let max = 1000;
+
+        let mut g = vec![UNSET; max];
+
+        initialize(&rules, &mut g);
+
+        let first_uninitialized = rules.len();
+
+        let mut largest = 2;
+
+        for n in 1..first_uninitialized {
+            largest = std::cmp::max(g[n], largest)
+        }
+
+        let mut freq = vec![0 as usize ; (largest + 2).next_power_of_two() - 1];
+        for n in 1..first_uninitialized {
+            freq[g[n]] += 1;
+        }
+        let mut seen = make_bitset(largest);
+
+        for n in first_uninitialized..max {
+            g[n] = naive(&rules, &g, n, &mut seen);
+            if g[n] > largest {
+                largest = g[n];
+                seen = make_bitset(largest);
+            }
+            seen.set_elements(0);
+
+            if g[n] >= freq.len() {
+                freq.resize((g[n] + 2).next_power_of_two() - 1, 0);
+            }
+            freq[g[n]] += 1;
+
+            let rares = gen_rares(&freq);
+
+            for x in 0..(largest + 1).next_power_of_two() {
+                for y in 0..(largest + 1).next_power_of_two() {
+                    let x_rare = rares[x];
+                    let y_rare = rares[y];
+                    if x_rare && y_rare {
+                        assert!(rares[x.bitxor(y)]);
+                    }
+
+                    if !x_rare && !y_rare {
+                        assert!(rares[x.bitxor(y)]);
+                    }
+
+                    if x_rare && !y_rare {
+                        assert!(!rares[x.bitxor(y)]);
+                    }
+                    if !x_rare && y_rare {
+                        assert!(!rares[x.bitxor(y)]);
+                    }
+                }
+            }
         }
     }
 
