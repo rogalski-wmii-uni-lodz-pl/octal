@@ -8,3 +8,8 @@ edition = "2021"
 [dependencies]
 bitvec = "1"
 phf = { version = "0.11.1", features = ["macros"] }
+
+
+# for profiling
+# [profile.release]
+# debug = true

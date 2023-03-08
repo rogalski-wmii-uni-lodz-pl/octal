@@ -1,31 +1,37 @@
 use game::gen_rares;
+use std::env;
+use std::time::Instant;
 
 pub mod game;
 
 fn main() {
-    let rules_str = "0.034";
+    let args: Vec<String> = env::args().collect();
+
+    let rules_str = if args.len() > 1 { &args[1] } else { "0.034" };
+
     let rules = game::rules_from_str(rules_str);
 
-    let max = 1000_000;
+    let max = if args.len() > 2 {
+        args[2].parse::<usize>().unwrap()
+    } else {
+        1_000_000
+    };
     let mut g = vec![game::UNSET; max];
 
     game::initialize(&rules, &mut g);
 
     let first_uninitialized = rules.len();
 
-    let mut largest = 2;
+    let mut largest = *g[1..first_uninitialized].iter().max().unwrap_or(&2);
 
-    for n in 1..first_uninitialized {
-        largest = std::cmp::max(g[n], largest)
-    }
-    let mut freq = vec![0 as usize ; (largest + 2).next_power_of_two() - 1];
+    let mut freq = vec![0 as usize; (largest + 2).next_power_of_two() - 1];
     for n in 1..first_uninitialized {
         freq[g[n]] += 1;
     }
 
     let mut seen = game::make_bitset(largest);
 
-    let mut rares = gen_rares(&freq);
+    let mut rares = gen_rares(&freq, largest);
 
     let mut rare_idx_and_nimber = vec![];
 
@@ -36,14 +42,12 @@ fn main() {
         }
     }
 
-    for n in first_uninitialized..max {
-            dbg!(&seen.len());
-            dbg!(&rares.len());
-        let na = game::naive(&rules, &g, n, &mut seen);
-        seen.set_elements(0);
-        let rc = game::rc(&rules, &g, n, &mut seen, &rares, &rare_idx_and_nimber);
+    let now = Instant::now();
 
-        g[n] = na;
+    for n in first_uninitialized..max {
+        g[n] = game::rc(&rules, &g, n, &mut seen, &rares, &rare_idx_and_nimber);
+        // g[n] = game::naive(&rules, &g, n, &mut seen);
+
         if g[n] >= freq.len() {
             freq.resize((g[n] + 2).next_power_of_two() - 1, 0);
         }
@@ -52,22 +56,21 @@ fn main() {
         if rares[g[n]] {
             rare_idx_and_nimber.push((n, g[n]));
         }
+        if n % 10000 == 0 {
+            println!("G({}) = {}, {:?}", n, g[n], now.elapsed());
+        }
 
         if g[n] > largest {
             largest = g[n];
             seen = game::make_bitset(largest);
-            rares = game::gen_rares(&freq);
+            rares = game::gen_rares(&freq, largest);
             rare_idx_and_nimber.clear();
             for i in 1..=n {
                 if rares[g[i]] {
                     rare_idx_and_nimber.push((i, g[i]));
                 }
             }
-            // rares.set(0, false);
         }
         seen.set_elements(0);
-
-        println!("G({}) = {}, {}", n, na, rc);
-        assert_eq!(na, rc);
     }
 }
