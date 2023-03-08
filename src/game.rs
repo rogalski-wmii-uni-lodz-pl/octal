@@ -279,7 +279,7 @@ pub fn gen_rares(freq: &Vec<usize>) -> BitVec<u64, Msb0> {
                 inserted = false;
                 for &c1 in c.iter() {
                     for &c2 in c.iter() {
-                        inserted |= r.insert(c1.bitxor(c2));
+                        inserted |= r.insert(c1 ^ c2);
                     }
                 }
 
@@ -288,7 +288,7 @@ pub fn gen_rares(freq: &Vec<usize>) -> BitVec<u64, Msb0> {
                 for &r1 in r.iter() {
                     for &r2 in r.iter() {
                         if r1 != 0 && r2 != 0 && r1 != r2 {
-                            inserted |= new_r.insert(r1.bitxor(r2));
+                            inserted |= new_r.insert(r1 ^ r2);
                         }
                     }
                 }
@@ -299,7 +299,7 @@ pub fn gen_rares(freq: &Vec<usize>) -> BitVec<u64, Msb0> {
 
                 for &r1 in r.iter() {
                     for &c1 in c.iter() {
-                        inserted |= new_c.insert(r1.bitxor(c1));
+                        inserted |= new_c.insert(r1 ^ c1);
                     }
                 }
 
@@ -593,7 +593,7 @@ mod test {
     fn test_gen_rares() {
         let rules = rules_from_str("0.034");
 
-        let max = 1000;
+        let max = 10000;
 
         let mut g = vec![UNSET; max];
 
@@ -626,25 +626,25 @@ mod test {
             }
             freq[g[n]] += 1;
 
-            let rares = gen_rares(&freq);
+            let rares = gen_rares(&freq, largest);
 
             for x in 0..(largest + 1).next_power_of_two() {
                 for y in 0..(largest + 1).next_power_of_two() {
                     let x_rare = rares[x];
                     let y_rare = rares[y];
                     if x_rare && y_rare {
-                        assert!(rares[x.bitxor(y)]);
+                        assert!(rares[x ^ y]);
                     }
 
                     if !x_rare && !y_rare {
-                        assert!(rares[x.bitxor(y)]);
+                        assert!(rares[x ^ y]);
                     }
 
                     if x_rare && !y_rare {
-                        assert!(!rares[x.bitxor(y)]);
+                        assert!(!rares[x ^ y]);
                     }
                     if !x_rare && y_rare {
-                        assert!(!rares[x.bitxor(y)]);
+                        assert!(!rares[x ^ y]);
                     }
                 }
             }
