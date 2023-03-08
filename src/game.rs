@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ops::BitXor};
+use std::{collections::HashSet, cmp::Reverse};
 
 use bitvec::prelude::*;
 pub const UNSET: usize = usize::MAX;
@@ -262,11 +262,11 @@ pub fn rc(
 /// * for all set bits x and unset bits y in C, x ^ y in unset.
 /// while at the same time maximizing the sum of freq[x] if rares[x] is unset.
 ///
-pub fn gen_rares(freq: &Vec<usize>) -> BitVec<u64, Msb0> {
+pub fn gen_rares(freq: &Vec<usize>, largest: usize) -> BitVec<u64, Msb0> {
     let mut r = HashSet::new();
     let mut c = HashSet::new();
     let mut vals : Vec<(usize, usize)> = freq.iter().map(|&e| e).enumerate().collect();
-    vals.sort_by_key(|(_, f)| *f);
+    vals.sort_by_key(|(_, f)| Reverse(*f));
     r.insert(0);
 
     for (x, _) in vals {
@@ -308,7 +308,7 @@ pub fn gen_rares(freq: &Vec<usize>) -> BitVec<u64, Msb0> {
         }
     }
 
-    let mut rares = make_bitset(freq.len());
+    let mut rares = make_bitset(largest);
     for &x in r.iter() {
         rares.set(x, true);
     }
