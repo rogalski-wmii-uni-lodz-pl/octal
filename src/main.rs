@@ -1,8 +1,23 @@
 use game::gen_rares;
 use std::env;
+use serde::{Serialize, Deserialize};
 use std::time::Instant;
+use bitvec::prelude::*;
 
 pub mod game;
+
+#[derive(Serialize, Deserialize)]
+struct Freq {
+    nimber: usize,
+    frequency: usize,
+    rare: bool,
+}
+
+fn dump_freqs(freqs : &Vec<usize>, rares: &BitVec<u64, Msb0>) {
+    let fs : Vec<Freq>= freqs.iter().enumerate().map(|(nimber, &frequency)| Freq { nimber, frequency, rare : rares[nimber] }).collect();
+    let res = serde_json::to_string_pretty(&fs);
+    println!("{}", res.unwrap());
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -44,8 +59,13 @@ fn main() {
 
     let now = Instant::now();
 
+    let mut maxs = 0;
+
     for n in first_uninitialized..max {
-        g[n] = game::rc(&rules, &g, n, &mut seen, &rares, &rare_idx_and_nimber);
+        let (s, x) = game::rc(&rules, &g, n, &mut seen, &rares, &rare_idx_and_nimber);
+        g[n] = x;
+
+        maxs = std::cmp::max(maxs, s);
         // g[n] = game::naive(&rules, &g, n, &mut seen);
 
         if g[n] >= freq.len() {
@@ -57,14 +77,26 @@ fn main() {
             rare_idx_and_nimber.push((n, g[n]));
         }
         if n % 10000 == 0 {
-            println!("G({}) = {}, {:?}", n, g[n], now.elapsed());
+            println!("G({}) = {}, {:?}, {}", n, g[n], now.elapsed(), maxs);
         }
+
 
         if g[n] > largest {
             largest = g[n];
             seen = game::make_bitset(largest);
             rares = game::gen_rares(&freq, largest);
+            // dump_freqs(&freq, &rares);
             rare_idx_and_nimber.clear();
+            for i in 1..=n {
+                if rares[g[i]] {
+                    rare_idx_and_nimber.push((i, g[i]));
+                }
+            }
+        } else if n.is_power_of_two() {
+            rares = game::gen_rares(&freq, largest);
+            rare_idx_and_nimber.clear();
+            println!("{} freqs after {:?}", n, now.elapsed());
+            dump_freqs(&freq, &rares);
             for i in 1..=n {
                 if rares[g[i]] {
                     rare_idx_and_nimber.push((i, g[i]));
@@ -73,4 +105,6 @@ fn main() {
         }
         seen.set_elements(0);
     }
+    println!("{} freqs after {:?}", max, now.elapsed());
+    dump_freqs(&freq, &rares);
 }

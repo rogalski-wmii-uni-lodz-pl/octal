@@ -172,7 +172,7 @@ pub fn rc(
     seen: &mut BitVec<u64, Msb0>,
     rares: &BitVec<u64, Msb0>,
     rare_idx_and_nimber: &Vec<(usize, usize)>,
-) -> usize {
+) -> (usize, usize) {
     // set the non-xor values
     for i in 1..rules.len() {
         if rules[i].some {
@@ -219,6 +219,7 @@ pub fn rc(
     // calculate how many unset rare values in mex remain
     let mut remaining_unset = mex.count_zeros() - 1; // -1 for seen2[first_common]
 
+    // let mut x = 0;
     // iterate over all x ^ y, including the previously checked
     // break early when all rare values smaller than first_common are set
     for i in 1..rules.len() {
@@ -239,7 +240,7 @@ pub fn rc(
                     if remaining_unset == 0 {
                         // all smaller values than first_common found, the value is the smallest
                         // not observed common
-                        return first_common;
+                        return (j, first_common);
                         // break
                     }
                 }
@@ -247,7 +248,7 @@ pub fn rc(
         }
     }
 
-    mex.first_zero().unwrap()
+    (0, mex.first_zero().unwrap())
 }
 
 /// Generate a bit vector of rare values, maximizing the sum of unset frequencies.
@@ -267,8 +268,8 @@ pub fn gen_rares(freq: &Vec<usize>, largest: usize) -> BitVec<u64, Msb0> {
     let mut c = HashSet::new();
     let mut vals : Vec<(usize, usize)> = freq.iter().map(|&e| e).enumerate().collect();
     vals.sort_by_key(|(_, f)| Reverse(*f));
-    r.insert(0);
 
+    r.insert(0);
     for (x, _) in vals {
         if r.contains(&x) || c.contains(&x) {
             continue
