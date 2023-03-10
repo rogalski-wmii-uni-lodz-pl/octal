@@ -22,4 +22,5 @@ fn main() {
         g.calc(n, &start);
     }
     g.dump_freqs(max, &start);
+    g.check_period(max);
 }

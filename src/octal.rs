@@ -475,4 +475,21 @@ impl Game {
             }
         }
     }
+
+    pub fn check_period(&self, n: usize) -> bool {
+        for period in 1..n {
+            let mut start = n - period;
+            while start > 0 && self.nimbers.g[start - 1] == self.nimbers.g[start - 1 + period] {
+                start -= 1;
+            }
+
+            if n >= 2 * start + 2 * period + self.rules.len() - 1 {
+                println!("period start: {}\n", start);
+                println!("period: {}\n", period);
+                return true;
+            }
+        }
+        return false;
+
+    }
 }
