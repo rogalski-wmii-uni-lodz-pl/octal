@@ -1,6 +1,7 @@
 use std::{collections::HashSet, cmp::Reverse};
 
 use bitvec::prelude::*;
+use serde::{Serialize, Deserialize};
 pub const UNSET: usize = usize::MAX;
 
 /// Rule represents possible moves from a position n after removing some i tokens are removed from a heap
@@ -14,9 +15,9 @@ pub const UNSET: usize = usize::MAX;
 /// are taken).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Rule {
-    all: bool,
-    some: bool,
-    divide: bool,
+    pub all: bool,
+    pub some: bool,
+    pub divide: bool,
 }
 
 impl From<char> for Rule {
@@ -315,6 +316,21 @@ pub fn gen_rares(freq: &Vec<usize>, largest: usize) -> BitVec<u64, Msb0> {
     }
     rares
 }
+
+
+#[derive(Serialize, Deserialize)]
+struct Freq {
+    nimber: usize,
+    frequency: usize,
+    rare: bool,
+}
+
+pub fn dump_freqs(freqs : &Vec<usize>, rares: &BitVec<u64, Msb0>) {
+    let fs : Vec<Freq>= freqs.iter().enumerate().map(|(nimber, &frequency)| Freq { nimber, frequency, rare : rares[nimber] }).collect();
+    let res = serde_json::to_string_pretty(&fs);
+    println!("{}", res.unwrap());
+}
+
 
 #[cfg(test)]
 mod test {
