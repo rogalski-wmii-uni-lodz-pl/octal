@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::time::Instant;
-//
-//
+
 /// Rule represents possible moves from a position n after removing some i tokens are removed from a heap
 ///
 /// If all is true, then 0 may be the successor of n if n == i (all tokens may be taken from the
@@ -35,11 +34,6 @@ impl From<char> for Rule {
 
 type BitV = BitVec<u64, Msb0>;
 
-pub fn make_bitset(largest: usize) -> BitVec<u64, Msb0> {
-    let bits = 2 * largest.next_power_of_two() + 2;
-    bitvec!(u64, Msb0; 0; bits)
-}
-
 /// Transform a game string like "0.034" into a Vector of Rules
 ///
 /// I-th element of the vector is a Rule which represents possible moves after removing i tokens
@@ -51,7 +45,9 @@ pub fn rules_from_str(game: &str) -> Vec<Rule> {
         .collect()
 }
 
-type Nimber = usize;
+// type Nimber = u8;
+type Nimber = u16;
+// type Nimber = usize;
 
 /// front - nimbers from 0 to some unspecified value (enough to calculate the next nimber)
 /// back - nimbers from n to at lest n - front.len(), (again, enough to calculate the next nimber)
@@ -79,6 +75,13 @@ pub struct Bits {
     pub rare: BitV,
     pub seen: BitV,
 }
+
+
+pub fn make_bitset(largest: Nimber) -> BitV {
+    let bits = 2 * (largest as usize).next_power_of_two() + 2;
+    bitvec!(u64, Msb0; 0; bits)
+}
+
 
 impl Bits {
     pub fn new() -> Self {
@@ -111,7 +114,7 @@ impl Stats {
 
     pub fn resize_frequencies(&mut self) {
         self.frequencies
-            .resize((self.largest_nimber + 2).next_power_of_two() - 1, 0);
+            .resize((self.largest_nimber as usize + 2).next_power_of_two() - 1, 0);
     }
     pub fn set_largest_nimber(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
         self.largest_nimber = *g[1..first_uninitialized].iter().max().unwrap_or(&2);
@@ -119,7 +122,7 @@ impl Stats {
 
     pub fn initialize_frequencies(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
         for n in 1..first_uninitialized {
-            self.frequencies[g[n]] += 1;
+            self.frequencies[g[n] as usize] += 1;
         }
     }
 
@@ -237,7 +240,7 @@ impl Game {
                 }
             }
 
-            self.nimbers.g[n] = seen.first_zero().unwrap();
+            self.nimbers.g[n as usize] = seen.first_zero().unwrap() as Nimber;
         }
     }
 
@@ -347,9 +350,9 @@ impl Game {
             self.resize(n);
         }
 
-        self.stats.frequencies[nim] += 1;
+        self.stats.frequencies[nim as usize] += 1;
 
-        if n < self.nimbers.g.len() && self.bits.rare[nim] {
+        if n < self.nimbers.g.len() && self.bits.rare[nim as usize] {
             self.nimbers.rare.push((n, nim));
         }
 
@@ -394,7 +397,7 @@ impl Game {
         self.bits.rare = self.stats.gen_rares();
         self.nimbers.rare.clear();
         for i in 1..n {
-            if self.bits.rare[self.nimbers.g[i]] {
+            if self.bits.rare[self.nimbers.g[i] as usize] {
                 self.nimbers.rare.push((i, self.nimbers.g[i]));
             }
         }
@@ -426,7 +429,7 @@ impl Game {
                             // all smaller values than first_common found, the value is the smallest
                             // not observed common
                             self.stats.largest_index = std::cmp::max(self.stats.largest_index, j);
-                            return first_common;
+                            return first_common as Nimber;
                             // break
                         }
                     }
@@ -435,7 +438,7 @@ impl Game {
         }
 
         self.stats.largest_index = std::cmp::max(self.stats.largest_index, n);
-        mex.first_zero().unwrap()
+        mex.first_zero().unwrap() as Nimber
     }
 
     // find the smallest common value
