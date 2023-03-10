@@ -1,8 +1,55 @@
-use super::game;
+// use super::game;
 use bitvec::prelude::*;
-use std::{fmt::DebugMap, time::Instant};
-// use std::cmp::Reverse;
-// use std::collections::{HashSet, VecDeque};
+use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
+use std::collections::HashSet;
+use std::time::Instant;
+//
+//
+/// Rule represents possible moves from a position n after removing some i tokens are removed from a heap
+///
+/// If all is true, then 0 may be the successor of n if n == i (all tokens may be taken from the
+/// heap).
+/// if some is true, then n - i may be the successor of n if n > i (some, but not all tokens may
+/// be taken from the heap).
+/// If divide is true, then a pair (i, n - i) may be the successor of n if n > i (some tokens may
+/// be taken from the heap, but the heap must be divided into two nonempty heaps after the tokens
+/// are taken).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Rule {
+    pub all: bool,
+    pub some: bool,
+    pub divide: bool,
+}
+
+impl From<char> for Rule {
+    fn from(c: char) -> Self {
+        let d = c.to_digit(10).unwrap();
+        Rule {
+            all: ((d & 1) != 0),
+            some: ((d & 2) != 0),
+            divide: ((d & 4) != 0),
+        }
+    }
+}
+
+type BitV = BitVec<u64, Msb0>;
+
+pub fn make_bitset(largest: usize) -> BitVec<u64, Msb0> {
+    let bits = 2 * largest.next_power_of_two() + 2;
+    bitvec!(u64, Msb0; 0; bits)
+}
+
+/// Transform a game string like "0.034" into a Vector of Rules
+///
+/// I-th element of the vector is a Rule which represents possible moves after removing i tokens
+/// from a heap.
+pub fn rules_from_str(game: &str) -> Vec<Rule> {
+    game.chars()
+        .filter(|&x| x != '.')
+        .map(|c| Rule::from(c))
+        .collect()
+}
 
 type Nimber = usize;
 
@@ -28,8 +75,6 @@ pub struct Stats {
     pub largest_index: usize,
 }
 
-type BitV = BitVec<u64, Msb0>;
-
 pub struct Bits {
     pub rare: BitV,
     pub seen: BitV,
@@ -38,14 +83,14 @@ pub struct Bits {
 impl Bits {
     pub fn new() -> Self {
         Self {
-            rare: game::make_bitset(0),
-            seen: game::make_bitset(0),
+            rare: make_bitset(0),
+            seen: make_bitset(0),
         }
     }
 
     pub fn resize(&mut self, largest_nimber: Nimber) {
-        self.rare = game::make_bitset(largest_nimber);
-        self.seen = game::make_bitset(largest_nimber);
+        self.rare = make_bitset(largest_nimber);
+        self.seen = make_bitset(largest_nimber);
     }
 }
 
@@ -78,30 +123,126 @@ impl Stats {
         }
     }
 
+    /// Generate a bit vector of rare values, maximizing the sum of unset frequencies from
+    /// self.frequencies.
+    ///
+    /// The bitset has to fulfil the following criteria:
+    /// * for all set bit x, y in rares  x ^ y is also set,
+    /// * for all unset bits x, y in rares, x ^ y is set,
+    /// * for all set bits x and unset bits y in C, x ^ y in unset.
+    /// while at the same time maximizing the sum of freq[x] if rares[x] is unset.
     pub fn gen_rares(&self) -> BitV {
-        game::gen_rares(&self.frequencies, self.largest_nimber)
+        let mut r = HashSet::new();
+        let mut c = HashSet::new();
+        let mut vals: Vec<(usize, usize)> =
+            self.frequencies.iter().map(|&e| e).enumerate().collect();
+        vals.sort_by_key(|(_, f)| Reverse(*f));
+
+        r.insert(0);
+        for (x, _) in vals {
+            if r.contains(&x) || c.contains(&x) {
+                continue;
+            } else {
+                c.insert(x);
+                let mut inserted = true;
+                while inserted {
+                    inserted = false;
+                    for &c1 in c.iter() {
+                        for &c2 in c.iter() {
+                            inserted |= r.insert(c1 ^ c2);
+                        }
+                    }
+
+                    let mut new_r = r.to_owned();
+
+                    for &r1 in r.iter() {
+                        for &r2 in r.iter() {
+                            if r1 != 0 && r2 != 0 && r1 != r2 {
+                                inserted |= new_r.insert(r1 ^ r2);
+                            }
+                        }
+                    }
+
+                    r = new_r;
+
+                    let mut new_c = c.to_owned();
+
+                    for &r1 in r.iter() {
+                        for &c1 in c.iter() {
+                            inserted |= new_c.insert(r1 ^ c1);
+                        }
+                    }
+
+                    c = new_c;
+                }
+            }
+        }
+
+        let mut rares = make_bitset(self.largest_nimber);
+        for &x in r.iter() {
+            rares.set(x, true);
+        }
+        rares
     }
 }
 
 pub struct Game {
-    pub rules: Vec<game::Rule>,
+    pub rules: Vec<Rule>,
     pub nimbers: Nimbers,
     pub stats: Stats,
     pub bits: Bits,
 }
 
+#[derive(Serialize, Deserialize)]
+struct Freq {
+    nimber: usize,
+    frequency: usize,
+    rare: bool,
+}
+
 impl Game {
     pub fn new(rules_str: &str, starting_size: usize) -> Self {
         Game {
-            rules: game::rules_from_str(rules_str),
+            rules: rules_from_str(rules_str),
             nimbers: Nimbers::new(starting_size),
             stats: Stats::new(),
             bits: Bits::new(),
         }
     }
 
+    /// Initialize first `rules.len()` elements of g with nim-values of positions.
+    ///
+    /// Calculate the first `rules.len()` elements naively, but while checking if the rule may be
+    /// applied (for n in 0..rules.len(), check if i > n).
+    /// This check is unnecessary for n's larger than `rules.len()`.
+    pub fn initialize(&mut self) {
+        self.nimbers.g[0] = 0;
+
+        for n in 1..self.rules.len() {
+            let mut seen = bitvec!(u64, Msb0; 0; 2 * self.rules.len() + 2);
+
+            seen.set(0, n < self.rules.len() && self.rules[n].all);
+
+            for i in 1..self.rules.len() {
+                if self.rules[i].some && n > i {
+                    seen.set(self.nimbers.g[n - i] as usize, true);
+                }
+
+                if self.rules[i].divide && n > i {
+                    for j in 1..=(n - i) / 2 {
+                        let x = self.nimbers.g[j];
+                        let y = self.nimbers.g[n - i - j];
+                        seen.set((x ^ y) as usize, true);
+                    }
+                }
+            }
+
+            self.nimbers.g[n] = seen.first_zero().unwrap();
+        }
+    }
+
     pub fn init(&mut self) {
-        game::initialize(&self.rules, &mut self.nimbers.g);
+        self.initialize();
         let first_uninitialized = self.rules.len();
 
         self.stats.initialize(&self.nimbers.g, first_uninitialized);
@@ -117,6 +258,48 @@ impl Game {
         }
     }
 
+    /// Compute the nimber g[n] leveraging the sparce space phenonmenon, under the following
+    /// assumptions:
+    /// * self.nimbers.g[0..n] were computed correctly, accodring to the rules of some octal game,
+    /// * n is at least rules.len(),
+    /// * self.bits.rare is a binary vector which in which a set bit at position i signifies that i
+    /// is a member of R
+    /// * the self.nimbers.rare vector represents a correct decmposition into R and C sets (that is
+    /// values from g are decomposed into two mutually exclusive sets R and C such that for all x,
+    /// y in R. x ^ y in R, and for all x, y in C, x ^ y in R, and for all x in R, y in C, x ^ y in
+    /// C).  * rare_idx_and_nimber is a vector in which contains all pairs (index, nimber) for
+    /// nimbers from g such that rares[nimber] is true (in python terms: rare_idx_and_nimber =
+    /// [(index,nimber) for nimber in g if rares[nimber]]).
+    ///
+    /// The sparse space phenomenon is an observeable phenomenon in at least some octal games, where
+    /// the set of nimbers is divisible into two sets: the common (C) and the rare (R) sets, such that:
+    /// * for all x, y in R. x ^ y in R,
+    /// * for all x, y in C, x ^ y in R,
+    /// * for all x in R, y in C, x ^ y in C.
+    /// Since most successsors of a position are in the form x ^ y where both x and y are common, then
+    /// a position in an octal game is more likely to *not* have a rare value.
+    /// It is therefore worthwhile to first check the values of all successsors in the from x ^ y,
+    /// where x is rare.
+    /// Since according to the Sprague-Grundy theorem, the nim-value of a position `n` is the smallest
+    /// natural number such, that is not the nim-value of `n`'s successors, this eliminates all possible
+    /// common values from the set of possible values of the position `n`.
+    /// The most likely candidate for the  nim-value of `n` is therefore the smallest common value, or a
+    /// new rare value (but this is unlikely).
+    /// To prove that it is the common value, we need to iterate through the unchecked successors, and
+    /// eliminate rare values smaller than the candidate.
+    /// If this is successful, then the nim-value of `n` is the candidate.
+    /// If this is unsuccessful, then the nim-value of `n` is rare.
+    ///
+    /// The advantage of this algorithm is that if number of elements of R is small (if values in R
+    /// appear in g at most some constant amount of times), then the algorithm approaches a linear time
+    /// complexity.  This is especially important, since the time complexity of the naive approach has
+    /// quadratic time complexity wrt n.
+    ///
+    /// Note an observation made by dr Piotr Beling, that this algorithm works also when the chosen
+    /// R and C do not correctly contain infrequent and frequent values in g, but as long as the
+    /// two sens fulfil the criteria outlined above, the algorithm works correctly (although it may
+    /// work even slower than the naive).  For instance, if we assume that all values are in R, and
+    /// C is an empty set, then this algorithm still correctly identifies nimbers.
     pub fn rc(&mut self, n: usize) -> Nimber {
         self.bits.seen.set_elements(0);
 
@@ -125,6 +308,33 @@ impl Game {
         self.iterate_over_r_xor_c(n);
 
         self.prove(n)
+    }
+
+    /// Naively compute the nimber g[n] assuming g[0..n] were computed correctly, accodring to the
+    /// rules of some octal game, assuming that at n is at least rules.len().
+    ///
+    /// Assumption that n is at least rules.len() makes it possible to omit some checks (for instance,
+    /// there are no more whole moves possible, and some and divide rules are always applicable, since
+    /// n is greater than rules.len(0).
+    pub fn naive(&mut self, n: usize) -> usize {
+        assert!(n >= self.rules.len());
+        self.bits.seen.set_elements(0);
+
+        for i in 1..self.rules.len() {
+            if self.rules[i].some {
+                self.bits.seen.set(self.nimbers.g[n - i] as usize, true);
+            }
+
+            if self.rules[i].divide {
+                for j in 1..=(n - i) / 2 {
+                    let x = self.nimbers.g[j];
+                    let y = self.nimbers.g[n - i - j];
+                    self.bits.seen.set((x ^ y) as usize, true);
+                }
+            }
+        }
+
+        self.bits.seen.first_zero().unwrap()
     }
 
     pub fn calc(&mut self, n: usize, start: &Instant) {
@@ -161,7 +371,21 @@ impl Game {
 
     pub fn dump_freqs(&self, n: usize, start: &Instant) {
         println!("{} freqs after {:?}", n, start.elapsed());
-        game::dump_freqs(&self.stats.frequencies, &self.bits.rare);
+
+        let fs: Vec<Freq> = self
+            .stats
+            .frequencies
+            .iter()
+            .enumerate()
+            .map(|(nimber, &frequency)| Freq {
+                nimber,
+                frequency,
+                rare: self.bits.rare[nimber],
+            })
+            .collect();
+
+        let formatted_json = serde_json::to_string_pretty(&fs).unwrap();
+        println!("{}", formatted_json);
     }
 
     fn resize(&mut self, n: usize) {
