@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::time::Instant;
+use cfg_if;
 
 /// Rule represents possible moves from a position n after removing some i tokens are removed from a heap
 ///
@@ -45,9 +46,17 @@ pub fn rules_from_str(game: &str) -> Vec<Rule> {
         .collect()
 }
 
-// type Nimber = u8;
-type Nimber = u16;
-// type Nimber = usize;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "nimber_u8")] {
+        pub type Nimber = u8;
+    } else if #[cfg(feature = "nimber_u16")] {
+        pub type Nimber = u16;
+    } else if #[cfg(feature = "nimber_u32")] {
+        pub type Nimber = u32;
+    } else {
+        pub type Nimber = u16;
+    }
+}
 
 /// front - nimbers from 0 to some unspecified value (enough to calculate the next nimber)
 /// back - nimbers from n to at lest n - front.len(), (again, enough to calculate the next nimber)

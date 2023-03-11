@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 bitvec = "1"
+cfg-if = "1.0.0"
 phf = { version = "0.11.1", features = ["macros"] }
 serde = { version = "1.0.154", features = ["derive"] }
 serde_json = "1.0.94"
@@ -15,3 +16,10 @@ serde_json = "1.0.94"
 # for profiling
 # [profile.release]
 # debug = true
+
+[features]
+nimber_u8 = []
+nimber_u16 = []
+nimber_u32 = []
+nimber_u64 = []
+nimber_u128 = []

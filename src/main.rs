@@ -16,6 +16,12 @@ fn main() {
     };
     let start = Instant::now();
 
+    println!(
+        "nimber bitsize {}, maxval {}",
+        octal::Nimber::BITS,
+        octal::Nimber::MAX
+    );
+
     let mut g = octal::Game::new(rules_str, max);
     g.init();
     for n in g.rules.len()..max {
