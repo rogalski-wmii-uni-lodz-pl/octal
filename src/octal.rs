@@ -113,9 +113,11 @@ impl Bin {
         self.bits.trailing_ones() as usize
     }
 
-    fn make(_largest: Nimber) -> Self {
-        assert!(_largest < 32);
-        Self { bits: !(0 as BitV).wrapping_shl(_largest as u32 + 1)}
+    fn make(largest: Nimber) -> Self {
+        let bs = (largest as u32 + 2).next_power_of_two() + 2;
+        println!("{} largest, {} bs {}", largest, bs, BitV::BITS);
+        assert!(bs < BitV::BITS);
+        Self { bits: !(0 as BitV) << bs }
     }
 
     fn count_unset(&self) -> usize {
@@ -127,8 +129,8 @@ impl Bin {
     }
 
     fn copy_up_to_inclusive(&self, _x: usize) -> Self {
-        self.clone()
-        // Self { bits: self.bits } // maybe set upper bits to 1?
+        // self.clone()
+        Self { bits: ((!0) << _x) | self.bits } // maybe set upper bits to 1?
     }
 }
 
@@ -359,7 +361,7 @@ impl Game {
         let first_uninitialized = self.rules.len();
 
         self.stats.initialize(&self.nimbers.g, first_uninitialized);
-        self.resize(first_uninitialized);
+        self.resize(first_uninitialized - 1);
     }
 
     pub fn set_seen_bits_from_some_moves(&mut self, n: usize) {
@@ -429,7 +431,7 @@ impl Game {
     /// Assumption that n is at least rules.len() makes it possible to omit some checks (for instance,
     /// there are no more whole moves possible, and some and divide rules are always applicable, since
     /// n is greater than rules.len(0).
-    pub fn naive(&mut self, n: usize) -> usize {
+    pub fn naive(&mut self, n: usize) -> Nimber {
         assert!(n >= self.rules.len());
         self.bits.seen.zero_bits();
 
@@ -447,7 +449,7 @@ impl Game {
             }
         }
 
-        self.bits.seen.lowest_unset()
+        self.bits.seen.lowest_unset() as Nimber
     }
 
     pub fn calc(&mut self, n: usize, start: &Instant) {
@@ -506,7 +508,7 @@ impl Game {
         self.bits.resize(self.stats.largest_nimber);
         self.bits.rare = Bits::gen_rares(&self.stats.frequencies, self.stats.largest_nimber);
         self.nimbers.rare.clear();
-        for i in 1..n {
+        for i in 1..=n {
             if self.bits.rare.get(self.nimbers.g[i] as usize) {
                 self.nimbers.rare.push((i, self.nimbers.g[i]));
             }
@@ -549,7 +551,7 @@ impl Game {
             }
         }
 
-        self.stats.largest_index = std::cmp::max(self.stats.largest_index, n);
+        // self.stats.largest_index = std::cmp::max(self.stats.largest_index, n);
         mex.lowest_unset() as Nimber
     }
 
