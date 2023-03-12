@@ -218,6 +218,39 @@ impl Bits {
         self.seen = Bin::make(largest_nimber);
     }
 
+}
+
+impl Stats {
+    pub fn new() -> Self {
+        Self {
+            largest_nimber: Nimber::min_value(),
+            frequencies: vec![],
+            largest_index: 0,
+        }
+    }
+
+    pub fn initialize(&mut self, front: &Vec<Nimber>, first_uninitialized: usize) {
+        self.set_largest_nimber(front, first_uninitialized);
+        self.resize_frequencies();
+        self.initialize_frequencies(front, first_uninitialized);
+    }
+
+    pub fn resize_frequencies(&mut self) {
+        self.frequencies.resize(
+            (self.largest_nimber as usize + 2).next_power_of_two() - 1,
+            0,
+        );
+    }
+    pub fn set_largest_nimber(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
+        self.largest_nimber = *g[1..first_uninitialized].iter().max().unwrap_or(&2);
+    }
+
+    pub fn initialize_frequencies(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
+        for n in 1..first_uninitialized {
+            self.frequencies[g[n] as usize] += 1;
+        }
+    }
+
     /// Generate a bit vector of rare values, maximizing the sum of unset frequencies from
     /// self.frequencies.
     ///
@@ -226,10 +259,10 @@ impl Bits {
     /// * for all unset bits x, y in rares, x ^ y is set,
     /// * for all set bits x and unset bits y in C, x ^ y in unset.
     /// while at the same time maximizing the sum of freq[x] if rares[x] is unset.
-    pub fn gen_rares(frequecies: &Vec<usize>, largest_nimber: Nimber) -> Bin {
+    pub fn gen_rares(&self) -> Bin {
         let mut r = HashSet::new();
         let mut c = HashSet::new();
-        let mut vals: Vec<(usize, usize)> = frequecies.iter().map(|&e| e).enumerate().collect();
+        let mut vals: Vec<(usize, usize)> = self.frequencies.iter().map(|&e| e).enumerate().collect();
         vals.sort_by_key(|(_, f)| Reverse(*f));
 
         r.insert(0);
@@ -272,44 +305,13 @@ impl Bits {
             }
         }
 
-        let mut rares = Bin::make(largest_nimber);
+        let mut rares = Bin::make(self.largest_nimber);
         for &x in r.iter() {
             rares.set_bit(x)
         }
         rares
     }
-}
 
-impl Stats {
-    pub fn new() -> Self {
-        Self {
-            largest_nimber: Nimber::min_value(),
-            frequencies: vec![],
-            largest_index: 0,
-        }
-    }
-
-    pub fn initialize(&mut self, front: &Vec<Nimber>, first_uninitialized: usize) {
-        self.set_largest_nimber(front, first_uninitialized);
-        self.resize_frequencies();
-        self.initialize_frequencies(front, first_uninitialized);
-    }
-
-    pub fn resize_frequencies(&mut self) {
-        self.frequencies.resize(
-            (self.largest_nimber as usize + 2).next_power_of_two() - 1,
-            0,
-        );
-    }
-    pub fn set_largest_nimber(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
-        self.largest_nimber = *g[1..first_uninitialized].iter().max().unwrap_or(&2);
-    }
-
-    pub fn initialize_frequencies(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
-        for n in 1..first_uninitialized {
-            self.frequencies[g[n] as usize] += 1;
-        }
-    }
 }
 
 pub struct Game {
@@ -554,7 +556,7 @@ impl Game {
     fn resize(&mut self, n: usize) {
         self.stats.resize_frequencies();
         self.bits.resize(self.stats.largest_nimber);
-        self.bits.rare = Bits::gen_rares(&self.stats.frequencies, self.stats.largest_nimber);
+        self.bits.rare = self.stats.gen_rares();
         self.nimbers.rare.clear();
         for i in 1..=n {
             if self.bits.rare.get(self.nimbers.g[i] as usize) {
