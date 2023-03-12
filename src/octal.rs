@@ -559,11 +559,13 @@ impl Game {
         // iterate over x ^ y such that x is in R
         for i in 1..self.rules.len() {
             if self.rules[i].divide {
-            for (idx, x) in self.nimbers.rare.iter() {
-                    if n > idx + i {
-                        let s = (x ^ self.nimbers.g[n - i - idx]) as usize;
-                        self.bits.seen.set_bit(s);
-                    }
+                let mut m = self.nimbers.rare.len();
+                while m > 0 && n < i + self.nimbers.rare[m - 1].0 {
+                    m -= 1;
+                }
+                for (idx, x) in self.nimbers.rare[0..m].iter() {
+                    let s = (x ^ self.nimbers.g[n - i - idx]) as usize;
+                    self.bits.seen.set_bit(s);
                 }
             }
         }
