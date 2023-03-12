@@ -1,10 +1,10 @@
 // use super::game;
 use bitvec::prelude::*;
+use cfg_if;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::time::Instant;
-use cfg_if;
 
 /// Rule represents possible moves from a position n after removing some i tokens are removed from a heap
 ///
@@ -33,7 +33,164 @@ impl From<char> for Rule {
     }
 }
 
-type BitV = BitVec<u64, Msb0>;
+pub type BitV = BitVec<u64, Msb0>;
+
+pub trait Bin {
+    fn set_bit(&mut self, x: usize);
+    fn zero_bits(&mut self);
+    fn get(&self, x: usize) -> bool;
+    fn lowest_unset(&self) -> usize;
+    fn make(largest: Nimber) -> Self;
+    fn count_unset(&self) -> usize;
+    fn find_first_unset_also_unset_in(&self, other: &Self) -> usize;
+    fn copy_up_to_inclusive(&self, x: usize) -> Self;
+}
+
+impl Bin for BitV {
+    fn set_bit(&mut self, x: usize) {
+        self.set(x, true);
+    }
+
+    fn zero_bits(&mut self) {
+        self.set_elements(0);
+    }
+
+    fn get(&self, x: usize) -> bool {
+        self[x]
+    }
+
+    fn lowest_unset(&self) -> usize {
+        self.first_zero().unwrap()
+    }
+
+    fn make(largest: Nimber) -> Self {
+        let bits = 2 * (largest as usize).next_power_of_two() + 2;
+        bitvec!(u64, Msb0; 0; bits)
+    }
+
+    fn count_unset(&self) -> usize {
+        self.count_zeros()
+    }
+
+    fn find_first_unset_also_unset_in(&self, other: &Self) -> usize {
+        for i in 0..other.len() {
+            if !self.get(i) && !other.get(i) {
+                return i;
+            }
+        }
+
+        self.len() - 1
+    }
+
+    fn copy_up_to_inclusive(&self, x: usize) -> Self {
+        self[0..x].to_owned()
+    }
+}
+
+impl Bin for u32 {
+    fn set_bit(&mut self, x: usize) {
+        *self |= 1 << x;
+    }
+
+    fn zero_bits(&mut self) {
+        *self = 0;
+    }
+
+    fn get(&self, x: usize) -> bool {
+        self & 1 << x != 0
+    }
+
+    fn lowest_unset(&self) -> usize {
+        self.trailing_ones() as usize
+    }
+
+    fn make(_largest: Nimber) -> Self {
+        assert!(_largest < 32);
+        !(0 as Self).wrapping_shl(_largest as u32 + 1)
+    }
+
+    fn count_unset(&self) -> usize {
+        self.count_zeros() as usize
+    }
+
+    fn find_first_unset_also_unset_in(&self, other: &Self) -> usize {
+        (self | other).lowest_unset()
+    }
+
+    fn copy_up_to_inclusive(&self, _x: usize) -> Self {
+        *self // maybe set upper bits to 1?
+    }
+}
+
+impl Bin for u64 {
+    fn set_bit(&mut self, x: usize) {
+        *self |= 1 << x;
+    }
+
+    fn zero_bits(&mut self) {
+        *self = 0;
+    }
+
+    fn get(&self, x: usize) -> bool {
+        self & 1 << x != 0
+    }
+
+    fn lowest_unset(&self) -> usize {
+        self.trailing_ones() as usize
+    }
+
+    fn make(_largest: Nimber) -> Self {
+        assert!(_largest < 64);
+        !(0 as Self).wrapping_shl(_largest as u32 + 1)
+    }
+
+    fn count_unset(&self) -> usize {
+        self.count_zeros() as usize
+    }
+
+    fn find_first_unset_also_unset_in(&self, other: &Self) -> usize {
+        (self | other).lowest_unset()
+    }
+
+    fn copy_up_to_inclusive(&self, _x: usize) -> Self {
+        *self // maybe set upper bits to 1?
+    }
+}
+
+impl Bin for u128 {
+    fn set_bit(&mut self, x: usize) {
+        *self |= 1 << x;
+    }
+
+    fn zero_bits(&mut self) {
+        *self = 0;
+    }
+
+    fn get(&self, x: usize) -> bool {
+        self & 1 << x != 0
+    }
+
+    fn lowest_unset(&self) -> usize {
+        self.trailing_ones() as usize
+    }
+
+    fn make(_largest: Nimber) -> Self {
+        assert!(_largest < 128);
+        !(0 as Self).wrapping_shl(_largest as u32 + 1)
+    }
+
+    fn count_unset(&self) -> usize {
+        self.count_zeros() as usize
+    }
+
+    fn find_first_unset_also_unset_in(&self, other: &Self) -> usize {
+        (self | other).lowest_unset()
+    }
+
+    fn copy_up_to_inclusive(&self, _x: usize) -> Self {
+        *self // maybe set upper bits to 1?
+    }
+}
 
 /// Transform a game string like "0.034" into a Vector of Rules
 ///
@@ -80,59 +237,27 @@ pub struct Stats {
     pub largest_index: usize,
 }
 
-pub struct Bits {
-    pub rare: BitV,
-    pub seen: BitV,
+pub struct Bits<T: Bin> {
+    pub rare: T,
+    pub seen: T,
 }
 
+// pub fn make_bitset(largest: Nimber) -> BitV {
+//     let bits = 2 * (largest as usize).next_power_of_two() + 2;
+//     bitvec!(u64, Msb0; 0; bits)
+// }
 
-pub fn make_bitset(largest: Nimber) -> BitV {
-    let bits = 2 * (largest as usize).next_power_of_two() + 2;
-    bitvec!(u64, Msb0; 0; bits)
-}
-
-
-impl Bits {
+impl<T: Bin> Bits<T> {
     pub fn new() -> Self {
         Self {
-            rare: make_bitset(0),
-            seen: make_bitset(0),
+            rare: T::make(0),
+            seen: T::make(0),
         }
     }
 
     pub fn resize(&mut self, largest_nimber: Nimber) {
-        self.rare = make_bitset(largest_nimber);
-        self.seen = make_bitset(largest_nimber);
-    }
-}
-
-impl Stats {
-    pub fn new() -> Self {
-        Self {
-            largest_nimber: Nimber::min_value(),
-            frequencies: vec![],
-            largest_index: 0,
-        }
-    }
-
-    pub fn initialize(&mut self, front: &Vec<Nimber>, first_uninitialized: usize) {
-        self.set_largest_nimber(front, first_uninitialized);
-        self.resize_frequencies();
-        self.initialize_frequencies(front, first_uninitialized);
-    }
-
-    pub fn resize_frequencies(&mut self) {
-        self.frequencies
-            .resize((self.largest_nimber as usize + 2).next_power_of_two() - 1, 0);
-    }
-    pub fn set_largest_nimber(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
-        self.largest_nimber = *g[1..first_uninitialized].iter().max().unwrap_or(&2);
-    }
-
-    pub fn initialize_frequencies(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
-        for n in 1..first_uninitialized {
-            self.frequencies[g[n] as usize] += 1;
-        }
+        self.rare = T::make(largest_nimber);
+        self.seen = T::make(largest_nimber);
     }
 
     /// Generate a bit vector of rare values, maximizing the sum of unset frequencies from
@@ -143,11 +268,10 @@ impl Stats {
     /// * for all unset bits x, y in rares, x ^ y is set,
     /// * for all set bits x and unset bits y in C, x ^ y in unset.
     /// while at the same time maximizing the sum of freq[x] if rares[x] is unset.
-    pub fn gen_rares(&self) -> BitV {
+    pub fn gen_rares(frequecies: &Vec<usize>, largest_nimber: Nimber) -> T {
         let mut r = HashSet::new();
         let mut c = HashSet::new();
-        let mut vals: Vec<(usize, usize)> =
-            self.frequencies.iter().map(|&e| e).enumerate().collect();
+        let mut vals: Vec<(usize, usize)> = frequecies.iter().map(|&e| e).enumerate().collect();
         vals.sort_by_key(|(_, f)| Reverse(*f));
 
         r.insert(0);
@@ -190,19 +314,51 @@ impl Stats {
             }
         }
 
-        let mut rares = make_bitset(self.largest_nimber);
+        let mut rares = T::make(largest_nimber);
         for &x in r.iter() {
-            rares.set(x, true);
+            rares.set_bit(x)
         }
         rares
     }
 }
 
-pub struct Game {
+impl Stats {
+    pub fn new() -> Self {
+        Self {
+            largest_nimber: Nimber::min_value(),
+            frequencies: vec![],
+            largest_index: 0,
+        }
+    }
+
+    pub fn initialize(&mut self, front: &Vec<Nimber>, first_uninitialized: usize) {
+        self.set_largest_nimber(front, first_uninitialized);
+        self.resize_frequencies();
+        self.initialize_frequencies(front, first_uninitialized);
+    }
+
+    pub fn resize_frequencies(&mut self) {
+        self.frequencies.resize(
+            (self.largest_nimber as usize + 2).next_power_of_two() - 1,
+            0,
+        );
+    }
+    pub fn set_largest_nimber(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
+        self.largest_nimber = *g[1..first_uninitialized].iter().max().unwrap_or(&2);
+    }
+
+    pub fn initialize_frequencies(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
+        for n in 1..first_uninitialized {
+            self.frequencies[g[n] as usize] += 1;
+        }
+    }
+}
+
+pub struct Game<T: Bin> {
     pub rules: Vec<Rule>,
     pub nimbers: Nimbers,
     pub stats: Stats,
-    pub bits: Bits,
+    pub bits: Bits<T>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -212,7 +368,7 @@ struct Freq {
     rare: bool,
 }
 
-impl Game {
+impl<T: Bin> Game<T> {
     pub fn new(rules_str: &str, starting_size: usize) -> Self {
         Game {
             rules: rules_from_str(rules_str),
@@ -233,7 +389,9 @@ impl Game {
         for n in 1..self.rules.len() {
             let mut seen = bitvec!(u64, Msb0; 0; 2 * self.rules.len() + 2);
 
-            seen.set(0, n < self.rules.len() && self.rules[n].all);
+            if n < self.rules.len() && self.rules[n].all {
+                seen.set(0, true);
+            }
 
             for i in 1..self.rules.len() {
                 if self.rules[i].some && n > i {
@@ -265,7 +423,7 @@ impl Game {
         // set the non-xor values
         for i in 1..self.rules.len() {
             if self.rules[i].some {
-                self.bits.seen.set(self.nimbers.g[n - i] as usize, true);
+                self.bits.seen.set_bit(self.nimbers.g[n - i] as usize);
             }
         }
     }
@@ -313,7 +471,7 @@ impl Game {
     /// work even slower than the naive).  For instance, if we assume that all values are in R, and
     /// C is an empty set, then this algorithm still correctly identifies nimbers.
     pub fn rc(&mut self, n: usize) -> Nimber {
-        self.bits.seen.set_elements(0);
+        self.bits.seen.zero_bits();
 
         self.set_seen_bits_from_some_moves(n);
         self.set_0th_bit_if_can_be_divided_in_half(n);
@@ -330,23 +488,23 @@ impl Game {
     /// n is greater than rules.len(0).
     pub fn naive(&mut self, n: usize) -> usize {
         assert!(n >= self.rules.len());
-        self.bits.seen.set_elements(0);
+        self.bits.seen.zero_bits();
 
         for i in 1..self.rules.len() {
             if self.rules[i].some {
-                self.bits.seen.set(self.nimbers.g[n - i] as usize, true);
+                self.bits.seen.set_bit(self.nimbers.g[n - i] as usize);
             }
 
             if self.rules[i].divide {
                 for j in 1..=(n - i) / 2 {
                     let x = self.nimbers.g[j];
                     let y = self.nimbers.g[n - i - j];
-                    self.bits.seen.set((x ^ y) as usize, true);
+                    self.bits.seen.set_bit((x ^ y) as usize);
                 }
             }
         }
 
-        self.bits.seen.first_zero().unwrap()
+        self.bits.seen.lowest_unset()
     }
 
     pub fn calc(&mut self, n: usize, start: &Instant) {
@@ -361,7 +519,7 @@ impl Game {
 
         self.stats.frequencies[nim as usize] += 1;
 
-        if n < self.nimbers.g.len() && self.bits.rare[nim as usize] {
+        if n < self.nimbers.g.len() && self.bits.rare.get(nim as usize) {
             self.nimbers.rare.push((n, nim));
         }
 
@@ -392,7 +550,7 @@ impl Game {
             .map(|(nimber, &frequency)| Freq {
                 nimber,
                 frequency,
-                rare: self.bits.rare[nimber],
+                rare: self.bits.rare.get(nimber),
             })
             .collect();
 
@@ -403,21 +561,23 @@ impl Game {
     fn resize(&mut self, n: usize) {
         self.stats.resize_frequencies();
         self.bits.resize(self.stats.largest_nimber);
-        self.bits.rare = self.stats.gen_rares();
+        self.bits.rare = Bits::gen_rares(&self.stats.frequencies, self.stats.largest_nimber);
         self.nimbers.rare.clear();
         for i in 1..n {
-            if self.bits.rare[self.nimbers.g[i] as usize] {
+            if self.bits.rare.get(self.nimbers.g[i] as usize) {
                 self.nimbers.rare.push((i, self.nimbers.g[i]));
             }
         }
     }
 
     fn prove(&mut self, n: usize) -> Nimber {
-        let first_common = self.find_first_common_unset();
+        let first_common = self
+            .bits
+            .seen
+            .find_first_unset_also_unset_in(&self.bits.rare);
 
-        let mut mex = self.bits.seen[0..first_common + 1].to_owned();
-        let mut remaining_unset = mex.count_zeros() - 1;
-        // -1 for seen2[first_common]
+        let mut mex = self.bits.seen.copy_up_to_inclusive(first_common + 1);
+        let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
 
         for i in 1..self.rules.len() {
             if remaining_unset == 0 {
@@ -430,9 +590,9 @@ impl Game {
                     let b = self.nimbers.g[n - i - j];
                     let loc = (a ^ b) as usize;
 
-                    if loc < first_common && !mex[loc] {
+                    if loc < first_common && !mex.get(loc) {
                         // a rare value smaller than first_common and not previously observed found
-                        mex.set(loc, true);
+                        mex.set_bit(loc);
                         remaining_unset -= 1;
                         if remaining_unset == 0 {
                             // all smaller values than first_common found, the value is the smallest
@@ -447,18 +607,7 @@ impl Game {
         }
 
         self.stats.largest_index = std::cmp::max(self.stats.largest_index, n);
-        mex.first_zero().unwrap() as Nimber
-    }
-
-    // find the smallest common value
-    fn find_first_common_unset(&mut self) -> usize {
-        for i in 0..self.bits.seen.len() {
-            if !self.bits.seen[i] && !self.bits.rare[i] {
-                return i;
-            }
-        }
-
-        self.bits.seen.len() - 1
+        mex.lowest_unset() as Nimber
     }
 
     fn iterate_over_r_xor_c(&mut self, n: usize) {
@@ -468,7 +617,7 @@ impl Game {
                 if self.rules[i].divide {
                     if n > idx + i {
                         let s = (x ^ self.nimbers.g[n - i - idx]) as usize;
-                        self.bits.seen.set(s, true);
+                        self.bits.seen.set_bit(s);
                     }
                 }
             }
@@ -479,7 +628,7 @@ impl Game {
         // set an obvious 0, if the game has a dividing move to any pair (x, x)
         for i in 1..self.rules.len() {
             if self.rules[i].divide && (n - i) & 1 == 0 {
-                self.bits.seen.set(0, true);
+                self.bits.seen.set_bit(0);
                 break;
             }
         }
@@ -499,6 +648,5 @@ impl Game {
             }
         }
         return false;
-
     }
 }

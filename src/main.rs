@@ -22,7 +22,7 @@ fn main() {
         octal::Nimber::MAX
     );
 
-    let mut g = octal::Game::new(rules_str, max);
+    let mut g = octal::Game::<octal::BitV>::new(rules_str, max);
     g.init();
     for n in g.rules.len()..max {
         g.calc(n, &start);
