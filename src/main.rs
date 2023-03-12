@@ -25,7 +25,7 @@ fn main() {
     let mut g = octal::Game::new(rules_str, max);
     g.init();
     for n in g.rules.len()..max {
-        g.calc(n, &start);
+        g.calc_rc(n, &start);
     }
     g.dump_freqs(max, &start);
     g.check_period(max);

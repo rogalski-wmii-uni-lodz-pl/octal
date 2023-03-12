@@ -49,10 +49,13 @@ cfg_if::cfg_if! {
 
 #[derive(Clone)]
 pub struct Bin {
-    bits : BitV,
+    bits: BitV,
 }
 
-#[cfg(any(feature = "bits_bitvec", not(any(feature = "bits_u32", feature = "bits_u64", feature = "bits_u128"))))]
+#[cfg(any(
+    feature = "bits_bitvec",
+    not(any(feature = "bits_u32", feature = "bits_u64", feature = "bits_u128"))
+))]
 impl Bin {
     fn set_bit(&mut self, x: usize) {
         self.bits.set(x, true);
@@ -72,7 +75,9 @@ impl Bin {
 
     fn make(largest: Nimber) -> Self {
         let bs = 2 * (largest as usize).next_power_of_two() + 2;
-        Self { bits :bitvec!(u64, Msb0; 0; bs) }
+        Self {
+            bits: bitvec!(u64, Msb0; 0; bs),
+        }
     }
 
     fn count_unset(&self) -> usize {
@@ -90,12 +95,16 @@ impl Bin {
     }
 
     fn copy_up_to_inclusive(&self, x: usize) -> Self {
-        Self { bits : self.bits[0..x].to_owned() }
+        Self {
+            bits: self.bits[0..x].to_owned(),
+        }
     }
 }
 
-
-#[cfg(all(not(feature = "bits_bitvec"), any(feature = "bits_u32", feature = "bits_u64", feature = "bits_u128")))]
+#[cfg(all(
+    not(feature = "bits_bitvec"),
+    any(feature = "bits_u32", feature = "bits_u64", feature = "bits_u128")
+))]
 impl Bin {
     fn set_bit(&mut self, x: usize) {
         self.bits |= 1 << x;
@@ -117,7 +126,9 @@ impl Bin {
         let bs = (largest as u32 + 2).next_power_of_two() + 2;
         println!("{} largest, {} bs {}", largest, bs, BitV::BITS);
         assert!(bs < BitV::BITS);
-        Self { bits: !(0 as BitV) << bs }
+        Self {
+            bits: !(0 as BitV) << bs,
+        }
     }
 
     fn count_unset(&self) -> usize {
@@ -125,17 +136,19 @@ impl Bin {
     }
 
     fn find_first_unset_also_unset_in(&self, other: &Self) -> usize {
-        Self { bits : (self.bits | other.bits)}.lowest_unset()
+        Self {
+            bits: (self.bits | other.bits),
+        }
+        .lowest_unset()
     }
 
     fn copy_up_to_inclusive(&self, _x: usize) -> Self {
         // self.clone()
-        Self { bits: ((!0) << _x) | self.bits } // maybe set upper bits to 1?
+        Self {
+            bits: ((!0) << _x) | self.bits,
+        } // maybe set upper bits to 1?
     }
 }
-
-
-
 
 /// Transform a game string like "0.034" into a Vector of Rules
 ///
@@ -452,8 +465,7 @@ impl Game {
         self.bits.seen.lowest_unset() as Nimber
     }
 
-    pub fn calc(&mut self, n: usize, start: &Instant) {
-        let nim = self.rc(n);
+    pub fn set_next_g_n(&mut self, n: usize, nim : Nimber) {
         self.nimbers.g[n] = nim;
 
         if nim > self.stats.largest_nimber {
@@ -468,20 +480,56 @@ impl Game {
             self.nimbers.rare.push((n, nim));
         }
 
-        if n % 10000 == 0 {
+
+        if n.is_power_of_two() {
+            self.resize(n);
+        }
+    }
+
+    pub fn calc_rc(&mut self, n: usize, start: &Instant) {
+        let nim = self.rc(n);
+        // if n % 1 == 0 {
+        if n % 100000 == 0 {
+            // let naive = self.naive(n);
+
+            println!(
+                // "G({}) = {} should be {}, {:?}, {}",
+                "G({}) = {}, {:?}, {}",
+                n,
+                nim,
+                // naive,
+                start.elapsed(),
+                self.stats.largest_index
+            );
+
+            // assert!(nim == naive);
+            // if nim != self.naive(n) {
+            //     panic!("wrong")
+            // }
+        }
+        if n.is_power_of_two() {
+            self.dump_freqs(n, start);
+        }
+        self.set_next_g_n(n, nim);
+    }
+
+    pub fn calc_naive(&mut self, n: usize, start: &Instant) {
+        let nim = self.naive(n);
+        if n % 1 == 0 {
             println!(
                 "G({}) = {}, {:?}, {}",
                 n,
                 nim,
+                // self.naive(n),
                 start.elapsed(),
                 self.stats.largest_index
             );
-        }
 
+        }
         if n.is_power_of_two() {
-            self.resize(n);
             self.dump_freqs(n, start);
         }
+        self.set_next_g_n(n, nim);
     }
 
     pub fn dump_freqs(&self, n: usize, start: &Instant) {
@@ -560,7 +608,7 @@ impl Game {
         for i in 1..self.rules.len() {
             if self.rules[i].divide {
                 let mut m = self.nimbers.rare.len();
-                while m > 0 && n < i + self.nimbers.rare[m - 1].0 {
+                while m > 0 && n <= i + self.nimbers.rare[m - 1].0 {
                     m -= 1;
                 }
                 for (idx, x) in self.nimbers.rare[0..m].iter() {
@@ -596,4 +644,276 @@ impl Game {
         }
         return false;
     }
+}
+
+#[cfg(test)]
+mod test {
+    use phf::phf_map;
+    use super::*;
+
+    #[test]
+    fn test_game_to_rules() {
+        let rules = rules_from_str("0.034");
+
+        assert_eq!(
+            rules,
+            vec![
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: false,
+                },
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: false,
+                },
+                Rule {
+                    all: true,
+                    some: true,
+                    divide: false,
+                },
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: true,
+                },
+            ]
+        );
+
+        let rules = rules_from_str("0.012345670");
+
+        assert_eq!(
+            rules,
+            vec![
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: false,
+                },
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: false,
+                },
+                Rule {
+                    all: true,
+                    some: false,
+                    divide: false
+                },
+                Rule {
+                    all: false,
+                    some: true,
+                    divide: false,
+                },
+                Rule {
+                    all: true,
+                    some: true,
+                    divide: false,
+                },
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: true,
+                },
+                Rule {
+                    all: true,
+                    some: false,
+                    divide: true,
+                },
+                Rule {
+                    all: false,
+                    some: true,
+                    divide: true,
+                },
+                Rule {
+                    all: true,
+                    some: true,
+                    divide: true,
+                },
+                Rule {
+                    all: false,
+                    some: false,
+                    divide: false,
+                },
+            ]
+        );
+    }
+
+
+    /// initial values taken from Achim Flammenkamp webpage:
+    /// http://wwwhomes.uni-bielefeld.de/achim/octal.html
+    static GAMES_NIMBERS: phf::Map<&'static str, [Nimber; 16]> = phf_map! {
+        "0.004" =>  [0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 0, 3, 3, 3],
+        "0.005" =>  [0, 0, 0, 1, 0, 1, 1, 2, 2, 2, 0, 3, 3, 4, 1, 1],
+        "0.006" =>  [0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 3, 3, 1, 1, 1],
+        "0.007" =>  [0, 0, 0, 1, 1, 1, 2, 2, 0, 3, 3, 1, 1, 1, 0, 4],
+        "0.014" =>  [0, 0, 1, 0, 0, 1, 0, 1, 2, 2, 1, 2, 3, 4, 0, 1],
+        "0.015" =>  [0, 0, 1, 1, 0, 1, 0, 2, 1, 2, 2, 3, 0, 1, 4, 2],
+        "0.016" =>  [0, 0, 1, 0, 1, 2, 2, 2, 0, 1, 0, 1, 4, 4, 2, 2],
+        "0.024" =>  [0, 0, 0, 1, 1, 2, 2, 3, 0, 4, 1, 1, 2, 5, 3, 2],
+        "0.026" =>  [0, 0, 0, 1, 1, 2, 2, 3, 0, 4, 1, 1, 2, 5, 3, 3],
+        "0.034" =>  [0, 0, 1, 1, 0, 2, 2, 3, 1, 4, 0, 1, 4, 3, 1, 2],
+        "0.04" =>  [0, 0, 0, 0, 1, 1, 1, 2, 2, 0, 3, 3, 1, 1, 1, 0],
+        "0.054" =>  [0, 0, 1, 0, 1, 2, 2, 2, 3, 4, 4, 1, 1, 1, 6, 3],
+        "0.055" =>  [0, 0, 1, 1, 1, 2, 2, 2, 3, 1, 1, 1, 4, 4, 4, 3],
+        "0.06" =>  [0, 0, 0, 1, 1, 2, 2, 0, 3, 1, 1, 2, 2, 3, 3, 4],
+        "0.064" =>  [0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 1, 1, 5, 5, 3, 3],
+        "0.104" =>  [0, 1, 0, 0, 0, 1, 0, 2, 2, 1, 2, 2, 4, 1, 0, 4],
+        "0.106" =>  [0, 1, 0, 0, 0, 1, 2, 2, 2, 1, 4, 4, 0, 1, 0, 6],
+        "0.114" =>  [0, 1, 1, 0, 0, 1, 1, 2, 0, 2, 1, 2, 0, 4, 1, 1],
+        "0.125" =>  [0, 1, 0, 2, 1, 1, 0, 2, 1, 3, 0, 1, 1, 3, 0, 2],
+        "0.126" =>  [0, 1, 0, 0, 2, 1, 3, 3, 2, 1, 0, 4, 2, 5, 0, 3],
+        "0.127" =>  [0, 1, 0, 2, 2, 1, 0, 4, 4, 1, 2, 2, 0, 1, 4, 4],
+        "0.135" =>  [0, 1, 1, 2, 0, 1, 1, 2, 0, 3, 1, 1, 0, 3, 1, 2],
+        "0.136" =>  [0, 1, 1, 0, 0, 2, 1, 3, 0, 2, 1, 1, 0, 2, 2, 3],
+        "0.14" =>  [0, 1, 0, 0, 1, 0, 2, 1, 2, 2, 1, 0, 4, 1, 4, 4],
+        "0.142" =>  [0, 1, 0, 0, 2, 2, 2, 1, 1, 0, 3, 3, 2, 4, 1, 0],
+        "0.143" =>  [0, 1, 0, 1, 2, 2, 2, 0, 1, 0, 4, 2, 2, 1, 5, 0],
+        "0.146" =>  [0, 1, 0, 0, 2, 2, 2, 4, 1, 1, 1, 3, 3, 2, 4, 4],
+        "0.156" =>  [0, 1, 1, 0, 2, 2, 2, 4, 4, 1, 1, 1, 3, 2, 2, 4],
+        "0.16" =>  [0, 1, 0, 0, 1, 2, 2, 1, 4, 0, 1, 4, 2, 1, 4, 0],
+        "0.161" =>  [0, 1, 0, 2, 1, 0, 2, 1, 3, 2, 1, 3, 2, 4, 3, 0],
+        "0.162" =>  [0, 1, 0, 0, 2, 2, 3, 1, 1, 0, 4, 2, 2, 6, 1, 0],
+        "0.163" =>  [0, 1, 0, 2, 2, 3, 1, 0, 4, 2, 2, 6, 1, 0, 4, 2],
+        "0.164" =>  [0, 1, 0, 0, 1, 2, 2, 3, 4, 4, 5, 1, 1, 6, 3, 2],
+        "0.165" =>  [0, 1, 0, 2, 1, 3, 2, 1, 3, 4, 4, 3, 6, 2, 3, 1],
+        "0.166" =>  [0, 1, 0, 0, 2, 2, 3, 4, 1, 1, 6, 6, 2, 2, 4, 4],
+        "0.167" =>  [0, 1, 0, 2, 2, 3, 4, 1, 1, 6, 2, 2, 4, 4, 1, 1],
+        "0.172" =>  [0, 1, 1, 0, 2, 2, 3, 0, 1, 1, 3, 2, 2, 4, 4, 0],
+        "0.174" =>  [0, 1, 1, 0, 2, 1, 3, 2, 2, 1, 4, 4, 5, 6, 4, 2],
+        "0.204" =>  [0, 0, 1, 0, 1, 2, 0, 1, 0, 1, 2, 3, 1, 2, 1, 2],
+        "0.205" =>  [0, 0, 1, 2, 0, 1, 0, 1, 2, 3, 1, 2, 3, 1, 3, 4],
+        "0.206" =>  [0, 0, 1, 0, 1, 2, 3, 2, 0, 1, 0, 1, 2, 3, 2, 3],
+        "0.207" =>  [0, 0, 1, 2, 1, 2, 0, 3, 0, 1, 2, 4, 5, 3, 1, 2],
+        "0.224" =>  [0, 0, 1, 2, 0, 1, 2, 3, 1, 2, 3, 1, 4, 3, 0, 4],
+        "0.244" =>  [0, 0, 1, 0, 1, 2, 3, 2, 3, 4, 5, 1, 5, 6, 7, 3],
+        "0.245" =>  [0, 0, 1, 2, 1, 2, 3, 4, 5, 1, 5, 6, 7, 3, 2, 1],
+        "0.264" =>  [0, 0, 1, 2, 3, 4, 5, 1, 6, 3, 2, 5, 1, 8, 6, 7],
+        "0.314" =>  [0, 1, 2, 0, 1, 2, 0, 2, 1, 2, 3, 1, 2, 4, 5, 3],
+        "0.324" =>  [0, 1, 0, 2, 1, 3, 0, 1, 3, 4, 0, 2, 3, 4, 2, 1],
+        "0.334" =>  [0, 1, 2, 0, 1, 2, 0, 3, 1, 2, 3, 1, 2, 4, 3, 5],
+        "0.336" =>  [0, 1, 2, 0, 3, 1, 2, 4, 0, 3, 1, 2, 0, 3, 4, 1],
+        "0.342" =>  [0, 1, 0, 1, 2, 3, 2, 0, 1, 0, 3, 2, 3, 4, 5, 0],
+        "0.344" =>  [0, 1, 0, 1, 2, 3, 2, 4, 5, 1, 4, 6, 2, 3, 2, 1],
+        "0.346" =>  [0, 1, 0, 1, 2, 3, 2, 4, 5, 1, 6, 7, 2, 3, 2, 1],
+        "0.354" =>  [0, 1, 2, 0, 1, 2, 4, 3, 1, 2, 3, 5, 2, 4, 3, 5],
+        "0.356" =>  [0, 1, 2, 0, 2, 1, 2, 4, 5, 1, 6, 7, 5, 1, 2, 8],
+        "0.36" =>  [0, 1, 0, 2, 1, 0, 2, 1, 3, 2, 1, 3, 2, 4, 3, 0],
+        "0.362" =>  [0, 1, 0, 2, 3, 4, 1, 0, 2, 3, 4, 1, 5, 2, 3, 7],
+        "0.364" =>  [0, 1, 0, 2, 1, 3, 2, 1, 3, 4, 5, 3, 4, 2, 3, 1],
+        "0.366" =>  [0, 1, 0, 2, 3, 4, 5, 1, 6, 2, 3, 4, 5, 7, 6, 8],
+        "0.37" =>  [0, 1, 2, 0, 1, 2, 3, 1, 2, 3, 4, 0, 3, 4, 2, 1],
+        "0.371" =>  [0, 1, 2, 3, 1, 0, 3, 2, 4, 0, 2, 3, 4, 0, 1, 2],
+        "0.374" =>  [0, 1, 2, 0, 1, 2, 4, 3, 1, 2, 3, 5, 2, 4, 3, 5],
+        "0.376" =>  [0, 1, 2, 0, 3, 1, 2, 4, 3, 5, 2, 4, 3, 5, 1, 4],
+        "0.404" =>  [0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 1, 1, 5, 6, 3, 3],
+        "0.414" =>  [0, 0, 1, 1, 0, 2, 2, 3, 4, 4, 0, 1, 1, 3, 2, 2],
+        "0.416" =>  [0, 0, 1, 1, 2, 2, 3, 4, 1, 1, 6, 6, 3, 2, 2, 1],
+        "0.444" =>  [0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 1, 1, 5, 6, 3, 3],
+        "0.45" =>  [0, 0, 1, 1, 2, 2, 3, 1, 1, 4, 4, 3, 2, 2, 1, 1],
+        "0.454" =>  [0, 0, 1, 1, 2, 2, 3, 4, 1, 1, 6, 6, 3, 2, 2, 1],
+        "0.56" =>  [0, 1, 0, 2, 2, 4, 1, 1, 3, 2, 4, 4, 6, 6, 2, 1],
+        "0.564" =>  [0, 1, 0, 2, 2, 4, 4, 1, 1, 3, 2, 5, 4, 7, 6, 8],
+        "0.6" =>  [0, 0, 1, 2, 0, 1, 2, 3, 1, 2, 3, 4, 0, 3, 4, 2],
+        "0.604" =>  [0, 0, 1, 2, 0, 1, 2, 3, 1, 2, 3, 4, 5, 3, 4, 5],
+        "0.606" =>  [0, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 1, 2, 3, 4],
+        "0.64" =>  [0, 0, 1, 2, 3, 4, 1, 5, 3, 2, 1, 5, 4, 2, 6, 8],
+        "0.644" =>  [0, 0, 1, 2, 3, 4, 5, 1, 6, 3, 2, 5, 8, 9, 6, 10],
+        "0.74" =>  [0, 1, 0, 1, 2, 3, 2, 4, 1, 4, 6, 2, 3, 2, 1, 5],
+        "0.744" =>  [0, 1, 0, 1, 2, 3, 2, 4, 5, 1, 6, 7, 2, 3, 2, 1],
+        "0.76" =>  [0, 1, 0, 2, 3, 4, 1, 6, 2, 3, 4, 1, 6, 7, 3, 2],
+        "0.764" =>  [0, 1, 0, 2, 3, 4, 5, 1, 6, 2, 3, 4, 5, 7, 6, 8],
+        "0.774" =>  [0, 1, 2, 3, 1, 4, 5, 6, 7, 1, 3, 2, 8, 9, 5, 4],
+        "0.776" =>  [0, 1, 2, 3, 4, 1, 6, 3, 2, 1, 6, 7, 4, 5, 8, 1],
+    };
+
+
+    #[test]
+    fn test_initialize() {
+        for (rules_str, res) in GAMES_NIMBERS.into_iter() {
+            let initial_len = rules_str.len() - 1; // -1 for '.'
+
+            let mut g = Game::new(rules_str, initial_len);
+            g.init();
+
+            assert_eq!(g.nimbers.g, res[0..initial_len]);
+        }
+    }
+
+    #[test]
+    fn test_naive() {
+        for (rules_str, res) in GAMES_NIMBERS.into_iter() {
+            let max = 16;
+            let mut g = Game::new(rules_str, max);
+            g.init();
+
+            for n in g.rules.len()..max {
+                let nim = g.naive(n);
+                g.set_next_g_n(n, nim);
+            }
+
+            assert_eq!(g.nimbers.g, res);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_rc_with_naive() {
+        for (rules_str, _res) in GAMES_NIMBERS.into_iter() {
+            println!("{}", rules_str);
+            let max = 10000;
+            let mut g = Game::new(rules_str, max);
+            g.init();
+
+            for n in g.rules.len()..max {
+                let nim_naive = g.naive(n);
+                let nim_rc = g.rc(n);
+                g.set_next_g_n(n, nim_rc);
+                assert_eq!(nim_naive, nim_rc, " for game {} at {}", rules_str, n);
+            }
+        }
+    }
+
+
+    #[test]
+    #[ignore]
+    fn test_rares() {
+        for (rules_str, _res) in GAMES_NIMBERS.into_iter() {
+            println!("{}", rules_str);
+            let max = 10000;
+            let mut g = Game::new(rules_str, max);
+            g.init();
+
+            for n in g.rules.len()..max {
+                let nim_rc = g.rc(n);
+                g.set_next_g_n(n, nim_rc);
+            }
+
+
+            for x in 0..(g.stats.largest_nimber + 1).next_power_of_two() {
+                for y in 0..(g.stats.largest_nimber + 1).next_power_of_two() {
+                    let x_rare = g.bits.rare.get(x as usize);
+                    let y_rare = g.bits.rare.get(y as usize);
+
+                    let loc = (x ^ y) as usize;
+                    if x_rare && y_rare {
+                        assert!(g.bits.rare.get(loc));
+                    }
+
+                    if !x_rare && !y_rare {
+                        assert!(g.bits.rare.get(loc));
+                    }
+
+                    if x_rare && !y_rare {
+                        assert!(!g.bits.rare.get(loc));
+                    }
+                    if !x_rare && y_rare {
+                        assert!(!g.bits.rare.get(loc));
+                    }
+                }
+            }
+        }
+    }
+
 }
