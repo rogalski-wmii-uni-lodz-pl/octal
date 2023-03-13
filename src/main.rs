@@ -22,10 +22,23 @@ fn main() {
         octal::Nimber::MAX
     );
 
+    let inc = max / 100;
+
     let mut g = octal::Game::new(rules_str, max);
     g.init();
     for n in g.rules.len()..max {
         g.calc_rc(n, &start);
+
+        if n % inc == 0 {
+            let estimated_total = max as u64 / (n as u64 / std::cmp::max(1, start.elapsed().as_secs()));
+            let estimated_left = (max - n) as u64 / (n as u64 / std::cmp::max(1, start.elapsed().as_secs()));
+            println!(
+                "{}%, estimated finish in: {}s (total {}s)",
+                (n * 100 / max),
+                estimated_left,
+                estimated_total,
+            )
+        }
     }
     g.dump_freqs(max, &start);
     g.check_period(max);

@@ -192,6 +192,7 @@ impl Nimbers {
 pub struct Stats {
     pub largest_nimber: Nimber,
     pub frequencies: Vec<usize>,
+    pub largest_nimber_index : usize,
     pub largest_index: usize,
 }
 
@@ -225,6 +226,7 @@ impl Stats {
         Self {
             largest_nimber: Nimber::min_value(),
             frequencies: vec![],
+            largest_nimber_index: 0,
             largest_index: 0,
         }
     }
@@ -470,9 +472,11 @@ impl Game {
     pub fn set_next_g_n(&mut self, n: usize, nim : Nimber) {
         self.nimbers.g[n] = nim;
 
+        if nim >= self.stats.largest_nimber {
+            self.stats.largest_nimber_index = n;
+        }
         if nim > self.stats.largest_nimber {
             self.stats.largest_nimber = nim;
-
             self.resize(n);
         }
 
@@ -490,24 +494,17 @@ impl Game {
 
     pub fn calc_rc(&mut self, n: usize, start: &Instant) {
         let nim = self.rc(n);
-        // if n % 1 == 0 {
         if n % 100000 == 0 {
-            // let naive = self.naive(n);
-
             println!(
-                // "G({}) = {} should be {}, {:?}, {}",
-                "G({}) = {}, {:?}, {}",
+                " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {} G({}) = {}",
+                start.elapsed().as_secs(),
+                n as u64 / std::cmp::max(1, start.elapsed().as_secs()),
+                self.stats.largest_index,
+                self.stats.largest_nimber,
+                self.stats.largest_nimber_index,
                 n,
                 nim,
-                // naive,
-                start.elapsed(),
-                self.stats.largest_index
             );
-
-            // assert!(nim == naive);
-            // if nim != self.naive(n) {
-            //     panic!("wrong")
-            // }
         }
         if n.is_power_of_two() {
             self.dump_freqs(n, start);
@@ -601,7 +598,6 @@ impl Game {
             }
         }
 
-        // self.stats.largest_index = std::cmp::max(self.stats.largest_index, n);
         mex.lowest_unset() as Nimber
     }
 
