@@ -192,7 +192,7 @@ impl Nimbers {
 pub struct Stats {
     pub largest_nimber: Nimber,
     pub frequencies: Vec<usize>,
-    pub largest_nimber_index : usize,
+    pub largest_nimber_index: usize,
     pub largest_index: usize,
 }
 
@@ -218,7 +218,6 @@ impl Bits {
         self.rare = Bin::make(largest_nimber);
         self.seen = Bin::make(largest_nimber);
     }
-
 }
 
 impl Stats {
@@ -248,7 +247,7 @@ impl Stats {
     }
 
     pub fn initialize_frequencies(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
-        for n in 1..first_uninitialized {
+        for n in 0..first_uninitialized {
             self.frequencies[g[n] as usize] += 1;
         }
     }
@@ -264,7 +263,8 @@ impl Stats {
     pub fn gen_rares(&self) -> Bin {
         let mut r = HashSet::new();
         let mut c = HashSet::new();
-        let mut vals: Vec<(usize, usize)> = self.frequencies.iter().map(|&e| e).enumerate().collect();
+        let mut vals: Vec<(usize, usize)> =
+            self.frequencies.iter().map(|&e| e).enumerate().collect();
         vals.sort_by_key(|(_, f)| Reverse(*f));
 
         r.insert(0);
@@ -313,7 +313,6 @@ impl Stats {
         }
         rares
     }
-
 }
 
 pub struct Game {
@@ -469,7 +468,7 @@ impl Game {
         self.bits.seen.lowest_unset() as Nimber
     }
 
-    pub fn set_next_g_n(&mut self, n: usize, nim : Nimber) {
+    pub fn set_next_g_n(&mut self, n: usize, nim: Nimber) {
         self.nimbers.g[n] = nim;
 
         if nim >= self.stats.largest_nimber {
@@ -486,48 +485,60 @@ impl Game {
             self.nimbers.rare.push((n, nim));
         }
 
-
         if n.is_power_of_two() {
             self.resize(n);
         }
     }
 
-    pub fn calc_rc(&mut self, n: usize, start: &Instant) {
-        let nim = self.rc(n);
+    pub fn dump_stats(&self, n: usize, start: &Instant) {
+        println!(
+            " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {} G({}) = {}",
+            start.elapsed().as_secs(),
+            n as u64 / std::cmp::max(1, start.elapsed().as_secs()),
+            self.stats.largest_index,
+            self.stats.largest_nimber,
+            self.stats.largest_nimber_index,
+            n,
+            self.nimbers.g[n]
+        );
+    }
+
+    pub fn occasional_info(&mut self, n: usize, start: &Instant) {
+        let max = self.nimbers.g.len();
+        let inc = if max > (2 as usize).pow(30) {
+            max / 1000
+        } else {
+            max / 100
+        };
+
         if n % 100000 == 0 {
-            println!(
-                " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {} G({}) = {}",
-                start.elapsed().as_secs(),
-                n as u64 / std::cmp::max(1, start.elapsed().as_secs()),
-                self.stats.largest_index,
-                self.stats.largest_nimber,
-                self.stats.largest_nimber_index,
-                n,
-                nim,
-            );
+            self.dump_stats(n, &start);
         }
+
         if n.is_power_of_two() {
             self.dump_freqs(n, start);
         }
+
+        if n % inc == 0 {
+            let rate = n as u64 / std::cmp::max(1, start.elapsed().as_secs());
+            let estimated_total = max as u64 / rate;
+            let estimated_left = (max - n) as u64 / rate;
+            println!(
+                "{}%, will finish in approximately: {}s (total {}s)",
+                (n * 100 / max),
+                estimated_left,
+                estimated_total,
+            )
+        }
+    }
+
+    pub fn calc_rc(&mut self, n: usize) {
+        let nim = self.rc(n);
         self.set_next_g_n(n, nim);
     }
 
-    pub fn calc_naive(&mut self, n: usize, start: &Instant) {
+    pub fn calc_naive(&mut self, n: usize) {
         let nim = self.naive(n);
-        if n % 1 == 0 {
-            println!(
-                "G({}) = {}, {:?}, {}",
-                n,
-                nim,
-                // self.naive(n),
-                start.elapsed(),
-                self.stats.largest_index
-            );
-
-        }
-        if n.is_power_of_two() {
-            self.dump_freqs(n, start);
-        }
         self.set_next_g_n(n, nim);
     }
 
@@ -646,8 +657,8 @@ impl Game {
 
 #[cfg(test)]
 mod test {
-    use phf::phf_map;
     use super::*;
+    use phf::phf_map;
 
     #[test]
     fn test_game_to_rules() {
@@ -738,7 +749,6 @@ mod test {
         );
     }
 
-
     /// initial values taken from Achim Flammenkamp webpage:
     /// http://wwwhomes.uni-bielefeld.de/achim/octal.html
     static GAMES_NIMBERS: phf::Map<&'static str, [Nimber; 16]> = phf_map! {
@@ -826,7 +836,6 @@ mod test {
         "0.776" =>  [0, 1, 2, 3, 4, 1, 6, 3, 2, 1, 6, 7, 4, 5, 8, 1],
     };
 
-
     #[test]
     fn test_initialize() {
         for (rules_str, res) in GAMES_NIMBERS.into_iter() {
@@ -873,7 +882,6 @@ mod test {
         }
     }
 
-
     #[test]
     #[ignore]
     fn test_rares() {
@@ -887,7 +895,6 @@ mod test {
                 let nim_rc = g.rc(n);
                 g.set_next_g_n(n, nim_rc);
             }
-
 
             for x in 0..(g.stats.largest_nimber + 1).next_power_of_two() {
                 for y in 0..(g.stats.largest_nimber + 1).next_power_of_two() {
@@ -913,5 +920,4 @@ mod test {
             }
         }
     }
-
 }
