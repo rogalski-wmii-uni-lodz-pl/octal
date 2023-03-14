@@ -238,7 +238,7 @@ impl Stats {
 
     pub fn resize_frequencies(&mut self) {
         self.frequencies.resize(
-            (self.largest_nimber as usize + 2).next_power_of_two() - 1,
+            (self.largest_nimber as usize + 2).next_power_of_two(),
             0,
         );
     }
