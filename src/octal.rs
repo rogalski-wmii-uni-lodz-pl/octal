@@ -125,9 +125,9 @@ impl Bin {
     fn make(largest: Nimber) -> Self {
         let bs = (largest as u32 + 2).next_power_of_two() + 2;
         println!("{} largest, {} bs {}", largest, bs, BitV::BITS);
-        assert!(bs < BitV::BITS);
+        // assert!(bs < BitV::BITS);
         Self {
-            bits: !(0 as BitV) << bs,
+            bits: if bs > BitV::BITS { 0 } else { !(0 as BitV) << (bs) },
         }
     }
 
@@ -193,7 +193,9 @@ pub struct Stats {
     pub largest_nimber: Nimber,
     pub frequencies: Vec<usize>,
     pub largest_nimber_index: usize,
-    pub largest_index: usize,
+    pub prev_values: usize,
+    pub latest_rare: Nimber,
+    pub latest_rare_index: usize,
 }
 
 pub struct Bits {
@@ -226,7 +228,9 @@ impl Stats {
             largest_nimber: Nimber::min_value(),
             frequencies: vec![],
             largest_nimber_index: 0,
-            largest_index: 0,
+            prev_values: 0,
+            latest_rare: Nimber::min_value(),
+            latest_rare_index: 0,
         }
     }
 
@@ -476,7 +480,9 @@ impl Game {
         }
         if nim > self.stats.largest_nimber {
             self.stats.largest_nimber = nim;
+            println!("resizing {}", nim);
             self.resize(n);
+            println!("resizing finished");
         }
 
         self.stats.frequencies[nim as usize] += 1;
@@ -492,14 +498,17 @@ impl Game {
 
     pub fn dump_stats(&self, n: usize, start: &Instant) {
         println!(
-            " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {} G({}) = {}",
+            " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {}, rares={}, latest_rare={} @ {}, G({}) = {}",
             start.elapsed().as_secs(),
             n as u64 / std::cmp::max(1, start.elapsed().as_secs()),
-            self.stats.largest_index,
+            self.stats.prev_values,
             self.stats.largest_nimber,
             self.stats.largest_nimber_index,
+            self.nimbers.rare.len() + 1, // +1 for (0, 0)
+            self.stats.latest_rare,
+            self.stats.latest_rare_index,
             n,
-            self.nimbers.g[n]
+            self.nimbers.g[n],
         );
     }
 
@@ -584,7 +593,7 @@ impl Game {
 
         for i in 1..self.rules.len() {
             if remaining_unset == 0 {
-                break;
+                return first_common as Nimber;
             }
 
             if self.rules[i].divide {
@@ -600,7 +609,7 @@ impl Game {
                         if remaining_unset == 0 {
                             // all smaller values than first_common found, the value is the smallest
                             // not observed common
-                            self.stats.largest_index = std::cmp::max(self.stats.largest_index, j);
+                            self.stats.prev_values = std::cmp::max(self.stats.prev_values, j);
                             return first_common as Nimber;
                             // break
                         }
@@ -609,7 +618,11 @@ impl Game {
             }
         }
 
-        mex.lowest_unset() as Nimber
+        let nim = mex.lowest_unset() as Nimber;
+        self.stats.latest_rare = nim;
+        self.stats.latest_rare_index = n;
+
+        nim
     }
 
     fn iterate_over_r_xor_c(&mut self, n: usize) {
