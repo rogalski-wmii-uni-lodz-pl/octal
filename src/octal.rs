@@ -127,7 +127,11 @@ impl Bin {
         println!("{} largest, {} bs {}", largest, bs, BitV::BITS);
         // assert!(bs < BitV::BITS);
         Self {
-            bits: if bs > BitV::BITS { 0 } else { !(0 as BitV) << (bs) },
+            bits: if bs > BitV::BITS {
+                0
+            } else {
+                !(0 as BitV) << (bs)
+            },
         }
     }
 
@@ -173,18 +177,30 @@ cfg_if::cfg_if! {
     }
 }
 
-/// front - nimbers from 0 to some unspecified value (enough to calculate the next nimber)
-/// back - nimbers from n to at lest n - front.len(), (again, enough to calculate the next nimber)
 pub struct Nimbers {
-    g: Vec<Nimber>,
-    rare: Vec<(usize, Nimber)>,
+    pub g: Vec<Nimber>,
+    pub g_back: Vec<Nimber>,
+    pub rare: Vec<(usize, Nimber)>,
 }
 
 impl Nimbers {
-    pub fn new(max: usize) -> Self {
+    pub fn new(max_full_memory: usize, max_tail_memory: usize) -> Self {
         Self {
-            g: vec![Nimber::max_value(); max],
+            g: vec![Nimber::max_value(); max_full_memory],
+            g_back: vec![Nimber::max_value(); max_tail_memory],
             rare: vec![],
+        }
+    }
+
+    pub fn last(&self, n: usize) -> Nimber {
+        self.g_back[n % self.g_back.len()]
+    }
+
+    pub fn copy_to_g_back(&mut self) {
+        let max_tail_memory = self.g_back.len();
+        for i in 0..max_tail_memory {
+            let loc = self.g.len() - 1 - i;
+            self.g_back[loc % max_tail_memory] = self.g[loc];
         }
     }
 }
@@ -241,10 +257,8 @@ impl Stats {
     }
 
     pub fn resize_frequencies(&mut self) {
-        self.frequencies.resize(
-            (self.largest_nimber as usize + 2).next_power_of_two(),
-            0,
-        );
+        self.frequencies
+            .resize((self.largest_nimber as usize + 2).next_power_of_two(), 0);
     }
     pub fn set_largest_nimber(&mut self, g: &Vec<Nimber>, first_uninitialized: usize) {
         self.largest_nimber = *g[1..first_uninitialized].iter().max().unwrap_or(&2);
@@ -334,10 +348,10 @@ struct Freq {
 }
 
 impl Game {
-    pub fn new(rules_str: &str, starting_size: usize) -> Self {
+    pub fn new(rules_str: &str, max_full_memory: usize, max_tail_memory: usize) -> Self {
         Game {
             rules: rules_from_str(rules_str),
-            nimbers: Nimbers::new(starting_size),
+            nimbers: Nimbers::new(max_full_memory, max_tail_memory),
             stats: Stats::new(),
             bits: Bits::new(),
         }
@@ -389,6 +403,15 @@ impl Game {
         for i in 1..self.rules.len() {
             if self.rules[i].some {
                 self.bits.seen.set_bit(self.nimbers.g[n - i] as usize);
+            }
+        }
+    }
+
+    pub fn set_seen_bits_from_some_moves_back(&mut self, n: usize) {
+        // set the non-xor values
+        for i in 1..self.rules.len() {
+            if self.rules[i].some {
+                self.bits.seen.set_bit(self.nimbers.last(n - i) as usize);
             }
         }
     }
@@ -445,6 +468,16 @@ impl Game {
         self.prove(n)
     }
 
+    pub fn rc_back(&mut self, n: usize) -> Nimber {
+        self.bits.seen.zero_bits();
+
+        self.set_seen_bits_from_some_moves_back(n);
+        self.set_0th_bit_if_can_be_divided_in_half(n);
+        self.iterate_over_r_xor_c_back(n);
+
+        self.prove_back(n)
+    }
+
     /// Naively compute the nimber g[n] assuming g[0..n] were computed correctly, accodring to the
     /// rules of some octal game, assuming that at n is at least rules.len().
     ///
@@ -496,6 +529,31 @@ impl Game {
         }
     }
 
+    pub fn set_next_g_n2(&mut self, n: usize, nim: Nimber) {
+        let loc = n % self.nimbers.g_back.len();
+        self.nimbers.g_back[loc] = nim;
+
+        if nim >= self.stats.largest_nimber {
+            self.stats.largest_nimber_index = n;
+        }
+        if nim > self.stats.largest_nimber {
+            self.stats.largest_nimber = nim;
+            println!("resizing {}", nim);
+            self.resize(n);
+            println!("resizing finished");
+        }
+
+        self.stats.frequencies[nim as usize] += 1;
+
+        if n < self.nimbers.g.len() && self.bits.rare.get(nim as usize) {
+            self.nimbers.rare.push((n, nim));
+        }
+
+        if n.is_power_of_two() {
+            self.resize(n);
+        }
+    }
+
     pub fn dump_stats(&self, n: usize, start: &Instant) {
         println!(
             " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {}, rares={}, latest_rare={} @ {}, G({}) = {}",
@@ -511,6 +569,23 @@ impl Game {
             self.nimbers.g[n],
         );
     }
+
+    pub fn dump_stats2(&self, n: usize, start: &Instant) {
+        println!(
+            " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {}, rares={}, latest_rare={} @ {}, G({}) = {}",
+            start.elapsed().as_secs(),
+            n as u64 / std::cmp::max(1, start.elapsed().as_secs()),
+            self.stats.prev_values,
+            self.stats.largest_nimber,
+            self.stats.largest_nimber_index,
+            self.nimbers.rare.len() + 1, // +1 for (0, 0)
+            self.stats.latest_rare,
+            self.stats.latest_rare_index,
+            n,
+            self.nimbers.g_back[n % self.nimbers.g_back.len()],
+        );
+    }
+
 
     pub fn occasional_info(&mut self, n: usize, start: &Instant) {
         let max = self.nimbers.g.len();
@@ -541,10 +616,27 @@ impl Game {
         }
     }
 
+    pub fn occasional_info2(&mut self, n: usize, start: &Instant) {
+        if n % 100000 == 0 {
+            self.dump_stats2(n, &start);
+        }
+
+        if n.is_power_of_two() {
+            self.dump_freqs(n, start);
+        }
+    }
+
+
     pub fn calc_rc(&mut self, n: usize) {
         let nim = self.rc(n);
         self.set_next_g_n(n, nim);
     }
+
+    pub fn calc_rc2(&mut self, n: usize) {
+        let nim = self.rc_back(n);
+        self.set_next_g_n2(n, nim);
+    }
+
 
     pub fn calc_naive(&mut self, n: usize) {
         let nim = self.naive(n);
@@ -575,7 +667,7 @@ impl Game {
         self.bits.resize(self.stats.largest_nimber);
         self.bits.rare = self.stats.gen_rares();
         self.nimbers.rare.clear();
-        for i in 1..=n {
+        for i in 1..std::cmp::min(n + 1, self.nimbers.g.len()) {
             if self.bits.rare.get(self.nimbers.g[i] as usize) {
                 self.nimbers.rare.push((i, self.nimbers.g[i]));
             }
@@ -625,6 +717,73 @@ impl Game {
         nim
     }
 
+
+    fn prove_back(&mut self, n: usize) -> Nimber {
+        let first_common = self
+            .bits
+            .seen
+            .find_first_unset_also_unset_in(&self.bits.rare);
+
+        let mut mex = self.bits.seen.copy_up_to_inclusive(first_common + 1);
+        let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
+
+        for i in 1..self.rules.len() {
+            if remaining_unset == 0 {
+                return first_common as Nimber;
+            }
+
+            if self.rules[i].divide {
+                let shift = (self.nimbers.g_back.len() + n - i) % self.nimbers.g_back.len();
+                let mut f = 0;
+                for j in (1..=shift).rev() {
+                    let a = self.nimbers.g[f];
+                    f += 1;
+                    let b = self.nimbers.g_back[j];
+                    let loc = (a ^ b) as usize;
+
+                    if loc < first_common && !mex.get(loc) {
+                        // a rare value smaller than first_common and not previously observed found
+                        mex.set_bit(loc);
+                        remaining_unset -= 1;
+                        if remaining_unset == 0 {
+                            // all smaller values than first_common found, the value is the smallest
+                            // not observed common
+                            self.stats.prev_values = std::cmp::max(self.stats.prev_values, f);
+                            return first_common as Nimber;
+                            // break
+                        }
+                    }
+                }
+
+                for j in (shift + 1..self.nimbers.g_back.len()).rev() {
+                    let a = self.nimbers.g[f];
+                    f += 1;
+                    let b = self.nimbers.g_back[j];
+                    let loc = (a ^ b) as usize;
+
+                    if loc < first_common && !mex.get(loc) {
+                        // a rare value smaller than first_common and not previously observed found
+                        mex.set_bit(loc);
+                        remaining_unset -= 1;
+                        if remaining_unset == 0 {
+                            // all smaller values than first_common found, the value is the smallest
+                            // not observed common
+                            self.stats.prev_values = std::cmp::max(self.stats.prev_values, f);
+                            return first_common as Nimber;
+                            // break
+                        }
+                    }
+                }
+            }
+        }
+
+        let nim = mex.lowest_unset() as Nimber;
+        self.stats.latest_rare = nim;
+        self.stats.latest_rare_index = n;
+        panic!("unexpectedly, larger rare value found! G({}) = {}", n, nim)
+    }
+
+
     fn iterate_over_r_xor_c(&mut self, n: usize) {
         // iterate over x ^ y such that x is in R
         for i in 1..self.rules.len() {
@@ -640,6 +799,20 @@ impl Game {
             }
         }
     }
+
+    fn iterate_over_r_xor_c_back(&mut self, n: usize) {
+        // iterate over x ^ y such that x is in R
+        for i in 1..self.rules.len() {
+            if self.rules[i].divide {
+                // we assume that nimbers.rare's last value cannot exceed n - i
+                for (idx, x) in self.nimbers.rare.iter() {
+                    let s = (x ^ self.nimbers.last(n - i - idx)) as usize;
+                    self.bits.seen.set_bit(s);
+                }
+            }
+        }
+    }
+
 
     fn set_0th_bit_if_can_be_divided_in_half(&mut self, n: usize) {
         // set an obvious 0, if the game has a dividing move to any pair (x, x)
@@ -854,7 +1027,7 @@ mod test {
         for (rules_str, res) in GAMES_NIMBERS.into_iter() {
             let initial_len = rules_str.len() - 1; // -1 for '.'
 
-            let mut g = Game::new(rules_str, initial_len);
+            let mut g = Game::new(rules_str, initial_len, 0);
             g.init();
 
             assert_eq!(g.nimbers.g, res[0..initial_len]);
@@ -865,7 +1038,7 @@ mod test {
     fn test_naive() {
         for (rules_str, res) in GAMES_NIMBERS.into_iter() {
             let max = 16;
-            let mut g = Game::new(rules_str, max);
+            let mut g = Game::new(rules_str, max, 0);
             g.init();
 
             for n in g.rules.len()..max {
@@ -883,7 +1056,7 @@ mod test {
         for (rules_str, _res) in GAMES_NIMBERS.into_iter() {
             println!("{}", rules_str);
             let max = 10000;
-            let mut g = Game::new(rules_str, max);
+            let mut g = Game::new(rules_str, max, 0);
             g.init();
 
             for n in g.rules.len()..max {
@@ -901,7 +1074,7 @@ mod test {
         for (rules_str, _res) in GAMES_NIMBERS.into_iter() {
             println!("{}", rules_str);
             let max = 10000;
-            let mut g = Game::new(rules_str, max);
+            let mut g = Game::new(rules_str, max, 0);
             g.init();
 
             for n in g.rules.len()..max {
