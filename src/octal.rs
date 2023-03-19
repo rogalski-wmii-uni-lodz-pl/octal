@@ -529,7 +529,7 @@ impl Game {
         }
     }
 
-    pub fn set_next_g_n2(&mut self, n: usize, nim: Nimber) {
+    pub fn set_next_g_back(&mut self, n: usize, nim: Nimber) {
         let loc = n % self.nimbers.g_back.len();
         self.nimbers.g_back[loc] = nim;
 
@@ -570,7 +570,7 @@ impl Game {
         );
     }
 
-    pub fn dump_stats2(&self, n: usize, start: &Instant) {
+    pub fn dump_stats_back(&self, n: usize, start: &Instant) {
         println!(
             " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {}, rares={}, latest_rare={} @ {}, G({}) = {}",
             start.elapsed().as_secs(),
@@ -585,7 +585,6 @@ impl Game {
             self.nimbers.g_back[n % self.nimbers.g_back.len()],
         );
     }
-
 
     pub fn occasional_info(&mut self, n: usize, start: &Instant) {
         let max = self.nimbers.g.len();
@@ -616,9 +615,9 @@ impl Game {
         }
     }
 
-    pub fn occasional_info2(&mut self, n: usize, start: &Instant) {
+    pub fn occasional_info_back(&mut self, n: usize, start: &Instant) {
         if n % 100000 == 0 {
-            self.dump_stats2(n, &start);
+            self.dump_stats_back(n, &start);
         }
 
         if n.is_power_of_two() {
@@ -626,17 +625,15 @@ impl Game {
         }
     }
 
-
     pub fn calc_rc(&mut self, n: usize) {
         let nim = self.rc(n);
         self.set_next_g_n(n, nim);
     }
 
-    pub fn calc_rc2(&mut self, n: usize) {
+    pub fn calc_rc_back(&mut self, n: usize) {
         let nim = self.rc_back(n);
-        self.set_next_g_n2(n, nim);
+        self.set_next_g_back(n, nim);
     }
-
 
     pub fn calc_naive(&mut self, n: usize) {
         let nim = self.naive(n);
@@ -717,7 +714,6 @@ impl Game {
         nim
     }
 
-
     fn prove_back(&mut self, n: usize) -> Nimber {
         let first_common = self
             .bits
@@ -783,7 +779,6 @@ impl Game {
         panic!("unexpectedly, larger rare value found! G({}) = {}", n, nim)
     }
 
-
     fn iterate_over_r_xor_c(&mut self, n: usize) {
         // iterate over x ^ y such that x is in R
         for i in 1..self.rules.len() {
@@ -812,7 +807,6 @@ impl Game {
             }
         }
     }
-
 
     fn set_0th_bit_if_can_be_divided_in_half(&mut self, n: usize) {
         // set an obvious 0, if the game has a dividing move to any pair (x, x)

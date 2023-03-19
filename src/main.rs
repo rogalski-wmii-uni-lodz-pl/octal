@@ -47,8 +47,8 @@ fn main() {
         g.nimbers.copy_to_g_back();
 
         for n in max_full_memory.. {
-            g.calc_rc2(n);
-            g.occasional_info2(n, &start);
+            g.calc_rc_back(n);
+            g.occasional_info_back(n, &start);
         }
     }
 }
