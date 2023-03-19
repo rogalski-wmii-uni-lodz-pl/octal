@@ -198,10 +198,8 @@ impl Nimbers {
 
     pub fn copy_to_g_back(&mut self) {
         let max_tail_memory = self.g_back.len();
-        for i in 0..max_tail_memory {
-            let loc = self.g.len() - 1 - i;
-            self.g_back[loc % max_tail_memory] = self.g[loc];
-        }
+        let max_full_memory = self.g.len();
+        self.g_back = self.g[(max_full_memory - max_tail_memory)..max_full_memory].into();
     }
 }
 
