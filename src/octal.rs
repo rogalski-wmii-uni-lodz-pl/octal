@@ -728,7 +728,7 @@ impl Game {
 
             if self.rules[i].divide {
                 let shift = (self.nimbers.g_back.len() + n - i) % self.nimbers.g_back.len();
-                let mut f = 0;
+                let mut f = 1;
                 for j in (1..=shift).rev() {
                     let a = self.nimbers.g[f];
                     f += 1;
