@@ -37,7 +37,7 @@ fn load(max: usize, path: &Path) -> Vec<octal::Nimber> {
         let mut n: octal::Nimber = 0;
         for b in 0..nimber_bytes {
             let loc = (i * nimber_bytes) + (nimber_bytes - b) - 1;
-            n += (buf[loc] as octal::Nimber) << (b * nimber_bytes);
+            n += (buf[loc] as octal::Nimber) << (b * 8);
         }
         nimbers[i] = n;
     }
@@ -116,13 +116,13 @@ fn main() {
                     let nim = g.nimbers.g_back[i];
                     for b in 0..nimber_bytes {
                         let loc = (i * nimber_bytes) + (nimber_bytes - b) - 1;
-                        buf[loc] = (nim >> b * nimber_bytes) as u8;
+                        buf[loc] = (nim >> b * 8) as u8;
                     }
                 }
                 save(n, rules_str, &buf)
             }
             g.calc_rc_back(n);
-            g.occasional_info_back(n, &start);
+            g.occasional_info_back(last, n, &start);
         }
     }
 }

@@ -568,11 +568,11 @@ impl Game {
         );
     }
 
-    pub fn dump_stats_back(&self, n: usize, start: &Instant) {
+    pub fn dump_stats_back(&self, skipped: usize, n: usize, start: &Instant) {
         println!(
             " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {}, rares={}, latest_rare={} @ {}, G({}) = {}",
             start.elapsed().as_secs(),
-            n as u64 / std::cmp::max(1, start.elapsed().as_secs()),
+            (n - skipped) as u64 / std::cmp::max(1, start.elapsed().as_secs()),
             self.stats.prev_values,
             self.stats.largest_nimber,
             self.stats.largest_nimber_index,
@@ -613,9 +613,9 @@ impl Game {
         }
     }
 
-    pub fn occasional_info_back(&mut self, n: usize, start: &Instant) {
+    pub fn occasional_info_back(&mut self, skipped: usize, n: usize, start: &Instant) {
         if n % 100000 == 0 {
-            self.dump_stats_back(n, &start);
+            self.dump_stats_back(skipped, n, &start);
         }
 
         if n.is_power_of_two() {
