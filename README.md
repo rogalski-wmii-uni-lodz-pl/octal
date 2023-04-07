@@ -3,19 +3,21 @@ This repository contains code for an experimental solver for octal games, and re
 It uses the sparse space phenomenon to speed up the calculation speed for octal games.
 
 This represents an ongoing effort to replicate and extend the work of Achim Flammenkamp, who maintains the only effort known to me to find periods in three digit octal games.
+
 [http://wwwhomes.uni-bielefeld.de/achim/octal.html](http://wwwhomes.uni-bielefeld.de/achim/octal.html)
 
 Values calculated so far:
-| game | n | log<sub>2(n) | period found? |
-|---|---|---|---|
-| [0.014](results/0.014) | [34359738368](results/0.014/34359738368) | 35 | no :x: |
-| [0.034](results/0.034) | [68719476736](results/0.034/68719476736) | 36 | no :x: |
-| [0.161](results/0.161) | [137438953472](results/0.161/137438953472) | 37 | no :x: |
-| [0.167](results/0.167) | [549755813888](results/0.167/549755813888) | 39 | no :x: |
-| [0.172](results/0.172) | [34359738368](results/0.172/34359738368) | 35 | no :x: |
+| game | n | log<sub>2</sub>(n) | period found? | max(G(n)) | 
+|---|---|---|---|---|
+| [0.014](results/0.014) | [34359738368](results/0.014/34359738368) | 35 | no :x: | 386 | 
+| [0.034](results/0.034) | [68719476736](results/0.034/68719476736) | 36 | no :x: | 256 |
+| [0.161](results/0.161) | [137438953472](results/0.161/137438953472) | 37 | no :x: | 158 |
+| [0.167](results/0.167) | [549755813888](results/0.167/549755813888) | 39 | no :x: | 64 | 
+| [0.172](results/0.172) | [34359738368](results/0.172/34359738368) | 35 | no :x: | 387 |
 
 ## results
-Files in the results subdirectory are summary of the frequency of Sprague-Grundy values of a game.
+Files in the results subdirectory are frequencies of Sprague-Grundy values of a game.
+
 The results are files organized as follows:
 * directory is named after the game,
 * frequencies of Sprague-Grundy values of a game are stored in each of the files in the directory,
