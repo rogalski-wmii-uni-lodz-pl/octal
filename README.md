@@ -9,11 +9,11 @@ This represents an ongoing effort to replicate and extend the work of Achim Flam
 Values calculated so far:
 | game | n | log<sub>2</sub>(n) | period found? | max(G(n)) | 
 |---|---|---|---|---|
-| [0.014](results/0.014) | [34359738368](results/0.014/34359738368) | 35 | no :x: | 386 | 
-| [0.034](results/0.034) | [68719476736](results/0.034/68719476736) | 36 | no :x: | 256 |
-| [0.161](results/0.161) | [137438953472](results/0.161/137438953472) | 37 | no :x: | 158 |
-| [0.167](results/0.167) | [549755813888](results/0.167/549755813888) | 39 | no :x: | 64 | 
-| [0.172](results/0.172) | [34359738368](results/0.172/34359738368) | 35 | no :x: | 387 |
+| [0.014](results/0.014) | [68719476736](results/0.014/68719476736) | 36 | no :x: | 392 |
+| [0.034](results/0.034) | [137438953472](results/0.034/137438953472) | 37 | no :x: | 256 |
+| [0.161](results/0.161) | [274877906944](results/0.161/274877906944) | 38 | no :x: | 158 |
+| [0.167](results/0.167) | [1099511627776](results/0.167/1099511627776) | 40 | no :x: | 64 |
+| [0.172](results/0.172) | [68719476736](results/0.172/68719476736) | 36 | no :x: | 387 |
 
 ## results
 Files in the results subdirectory are frequencies of Sprague-Grundy values of a game.
