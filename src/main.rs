@@ -86,15 +86,14 @@ fn main() {
     if !period_found && max_tail_memory != 0 {
         let mut last = 0;
 
-        for i in (max_full_memory..).step_by(max_tail_memory) {
-            let p = format!("nimbers_{}_{}", rules_str, i);
-            let path = Path::new(&p);
+        let paths = fs::read_dir(".").unwrap();
 
-            if path.exists() {
-                last = i;
-            } else {
-                break;
-            }
+        for path in paths {
+
+            let s = path.unwrap().path().file_name().unwrap().to_str().unwrap().to_string();
+            let (_, val) = s.rsplit_once("_").expect("bad name");
+            let v : usize = val.parse().unwrap();
+            last = v.max(last);
         }
 
         if last == 0 {
