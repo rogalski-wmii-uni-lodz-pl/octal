@@ -87,7 +87,7 @@ fn main() {
     if !period_found && max_tail_memory != 0 {
         let mut last = 0;
 
-        let paths = glob::glob(&format!("{}_*", rules_str)).unwrap();
+        let paths = glob::glob(&format!("nimbers_{rules_str}_*")).unwrap();
 
         for path in paths {
             let s = path.unwrap().file_name().unwrap().to_str().unwrap().to_string();
