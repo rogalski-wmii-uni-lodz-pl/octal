@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
+use glob;
 
 pub mod octal;
 
@@ -86,11 +87,10 @@ fn main() {
     if !period_found && max_tail_memory != 0 {
         let mut last = 0;
 
-        let paths = fs::read_dir(".").unwrap();
+        let paths = glob::glob(&format!("{}_*", rules_str)).unwrap();
 
         for path in paths {
-
-            let s = path.unwrap().path().file_name().unwrap().to_str().unwrap().to_string();
+            let s = path.unwrap().file_name().unwrap().to_str().unwrap().to_string();
             let (_, val) = s.rsplit_once("_").expect("bad name");
             let v : usize = val.parse().unwrap();
             last = v.max(last);
