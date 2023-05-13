@@ -70,7 +70,7 @@ fn main() {
         octal::Nimber::MAX
     );
 
-    let mut g = octal::Game::new(rules_str, max_full_memory, max_tail_memory);
+    let mut g = octal::GameT::new(rules_str, max_full_memory, max_tail_memory, 10);
     g.init();
     for n in g.rules.len()..max_full_memory {
         g.calc_rc(n);
@@ -78,50 +78,50 @@ fn main() {
     }
     g.dump_freqs(max_full_memory, &start);
     g.dump_stats(max_full_memory - 1, &start);
-    let start_period = Instant::now();
+    // let start_period = Instant::now();
 
-    let period_found = g.check_period(max_full_memory);
-    println!("total period: {:?}", start_period.elapsed());
-    println!("total: {:?}", start.elapsed());
+    // let period_found = g.check_period(max_full_memory);
+    // println!("total period: {:?}", start_period.elapsed());
+    // println!("total: {:?}", start.elapsed());
 
-    if !period_found && max_tail_memory != 0 {
-        let mut last = 0;
+    // if !period_found && max_tail_memory != 0 {
+    //     let mut last = 0;
 
-        let paths = glob::glob(&format!("nimbers_{rules_str}_*")).unwrap();
+    //     let paths = glob::glob(&format!("nimbers_{rules_str}_*")).unwrap();
 
-        for path in paths {
-            let s = path.unwrap().file_name().unwrap().to_str().unwrap().to_string();
-            let (_, val) = s.rsplit_once("_").expect("bad name");
-            let v : usize = val.parse().unwrap();
-            last = v.max(last);
-        }
+    //     for path in paths {
+    //         let s = path.unwrap().file_name().unwrap().to_str().unwrap().to_string();
+    //         let (_, val) = s.rsplit_once("_").expect("bad name");
+    //         let v : usize = val.parse().unwrap();
+    //         last = v.max(last);
+    //     }
 
-        if last == 0 {
-            last = max_full_memory;
-            g.nimbers.copy_to_g_back();
-        } else {
-            let p = format!("nimbers_{}_{}", rules_str, last);
-            let path = Path::new(&p);
-            let loaded = load(max_tail_memory, path);
-            g.nimbers.g_back = loaded;
-        }
+    //     if last == 0 {
+    //         last = max_full_memory;
+    //         g.nimbers.copy_to_g_back();
+    //     } else {
+    //         let p = format!("nimbers_{}_{}", rules_str, last);
+    //         let path = Path::new(&p);
+    //         let loaded = load(max_tail_memory, path);
+    //         g.nimbers.g_back = loaded;
+    //     }
 
-        let nimber_bytes = (octal::Nimber::BITS / u8::BITS) as usize;
-        let mut buf: Vec<u8> = vec![0; max_tail_memory * nimber_bytes];
+    //     let nimber_bytes = (octal::Nimber::BITS / u8::BITS) as usize;
+    //     let mut buf: Vec<u8> = vec![0; max_tail_memory * nimber_bytes];
 
-        for n in last.. {
-            if n % max_tail_memory == 0 {
-                for i in 0..max_tail_memory {
-                    let nim = g.nimbers.g_back[i];
-                    for b in 0..nimber_bytes {
-                        let loc = (i * nimber_bytes) + (nimber_bytes - b) - 1;
-                        buf[loc] = (nim >> b * 8) as u8;
-                    }
-                }
-                save(n, rules_str, &buf)
-            }
-            g.calc_rc_back(n);
-            g.occasional_info_back(last, n, &start);
-        }
-    }
+    //     for n in last.. {
+    //         if n % max_tail_memory == 0 {
+    //             for i in 0..max_tail_memory {
+    //                 let nim = g.nimbers.g_back[i];
+    //                 for b in 0..nimber_bytes {
+    //                     let loc = (i * nimber_bytes) + (nimber_bytes - b) - 1;
+    //                     buf[loc] = (nim >> b * 8) as u8;
+    //                 }
+    //             }
+    //             save(n, rules_str, &buf)
+    //         }
+    //         g.calc_rc_back(n);
+    //         g.occasional_info_back(last, n, &start);
+    //     }
+    // }
 }
