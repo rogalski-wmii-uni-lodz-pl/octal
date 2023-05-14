@@ -86,6 +86,20 @@ impl Bin {
         self.bits.count_zeros()
     }
 
+
+    fn count_unset_upto(&self, upto: usize) -> usize {
+        let mut cnt = 0;
+
+        for i in 0..upto {
+            if !self.get(i) {
+                cnt += 1
+            }
+        }
+
+        return cnt;
+    }
+
+
     fn find_first_unset_also_unset_in(&self, other: &Self) -> usize {
         for i in 0..other.bits.len() {
             if !self.get(i) && !other.get(i) {
@@ -102,7 +116,7 @@ impl Bin {
         }
     }
 
-    fn set_all(&mut self, other : &Self) {
+    fn set_all(&mut self, other: &Self) {
         self.bits |= &other.bits;
     }
 }
@@ -159,7 +173,7 @@ impl Bin {
         } // maybe set upper bits to 1?
     }
 
-    fn set_all(&mut self, other : &Self) {
+    fn set_all(&mut self, other: &Self) {
         self.bits |= other.bits;
     }
 }
@@ -849,10 +863,14 @@ pub struct GameT {
     pub stats: Stats,
     pub bits: Bits,
     pub seens: Vec<Arc<RwLock<Bin>>>,
+    pub mexs: Vec<Arc<RwLock<Bin>>>,
     pub threads: usize,
-    pub result_recv: mpsc::Receiver<usize>,
-    pub runners: Vec<mpsc::Sender<usize>>,
-    pub handles: Vec<std::thread::JoinHandle<()>>,
+    pub rc_result_recv: mpsc::Receiver<usize>,
+    pub rc_runners: Vec<mpsc::Sender<usize>>,
+    pub rc_handles: Vec<std::thread::JoinHandle<()>>,
+    pub prove_result_recv: mpsc::Receiver<usize>,
+    pub prove_runners: Vec<mpsc::Sender<(usize, usize, usize, usize, usize)>>,
+    pub prove_handles: Vec<std::thread::JoinHandle<()>>,
 }
 
 impl GameT {
@@ -865,50 +883,120 @@ impl GameT {
         let rules = rules_from_str(rules_str);
         let nimbers = Arc::new(RwLock::new(Nimbers::new(max_full_memory, max_tail_memory)));
 
-        let (result_sender, result_recv) = mpsc::channel();
+        let (rc_result_sender, rc_result_recv) = mpsc::channel();
 
-        let mut runners = vec![];
+        let mut rc_runners = vec![];
 
-        let seens : Vec<_> = (0..threads).map(|_| {
-            Arc::new(RwLock::new(Bin::make(0)))
-        }).collect();
+        let seens: Vec<_> = (0..threads)
+            .map(|_| Arc::new(RwLock::new(Bin::make(0))))
+            .collect();
 
+        let rc_handles: Vec<_> = (0..threads)
+            .map(|tid| {
+                let rules_cpy = rules.clone();
+                let nimbers_ref = nimbers.clone();
+                let result_sender_cpy = rc_result_sender.clone();
+                let seen_ref = seens[tid].clone();
 
-        let handles : Vec<_> = (0..threads).map(|tid| {
-            let rules_cpy = rules.clone();
-            let nimbers_ref = nimbers.clone();
-            let result_sender_cpy = result_sender.clone();
-            let seen_ref = seens[tid].clone();
+                let (runner_sender, runner_recv) = mpsc::channel();
+                rc_runners.push(runner_sender);
 
-            let (runner_sender, runner_recv) = mpsc::channel();
-            runners.push(runner_sender);
+                let f = move || {
+                    for n in runner_recv {
+                        let mut seen = seen_ref.write().unwrap();
+                        seen.zero_bits();
+                        let ns = nimbers_ref.read().unwrap();
+                        for i in 1..rules_cpy.len() {
+                            if rules_cpy[i].divide {
+                                let mut m = ns.rare.len();
+                                while m > 0 && n <= i + ns.rare[m - 1].0 {
+                                    m -= 1;
+                                }
 
-            let f = move || {
-
-                for n in runner_recv {
-                    let mut seen = seen_ref.write().unwrap();
-                    seen.zero_bits();
-                    let ns = nimbers_ref.read().unwrap();
-                    for i in 1..rules_cpy.len() {
-                        if rules_cpy[i].divide {
-                            let mut m = ns.rare.len();
-                            while m > 0 && n <= i + ns.rare[m - 1].0 {
-                                m -= 1;
-                            }
-
-                            for ridx in (0..m).skip(tid).step_by(threads) {
-                                let (idx, x) = ns.rare[ridx];
-                                let s = (x ^ ns.g[n - i - idx]) as usize;
-                                seen.set_bit(s);
+                                for ridx in (tid..m).step_by(threads) {
+                                    let (idx, x) = ns.rare[ridx];
+                                    let s = (x ^ ns.g[n - i - idx]) as usize;
+                                    seen.set_bit(s);
+                                }
                             }
                         }
+                        result_sender_cpy.send(tid).unwrap();
                     }
-                    result_sender_cpy.send(tid).unwrap();
-                }
-            };
+                };
 
-            spawn(f)
-        }).collect();
+                spawn(f)
+            })
+            .collect();
+
+        let mut prove_runners = vec![];
+
+        let (prove_result_sender, prove_result_recv) = mpsc::channel();
+
+        let mexs: Vec<_> = (0..threads)
+            .map(|_| Arc::new(RwLock::new(Bin::make(0))))
+            .collect();
+
+        let prove_handles: Vec<_> = (0..threads)
+            .map(|tid| {
+                let rules_cpy = rules.clone();
+                let nimbers_ref = nimbers.clone();
+                let prove_result_sender_cpy = prove_result_sender.clone();
+                let mexs_ref = mexs[tid].clone();
+
+                let (runner_sender, runner_recv) = mpsc::channel();
+                prove_runners.push(runner_sender);
+
+                // let f = move || {
+
+                //     for n in runner_recv {
+                //         let mut seen = seen_ref.write().unwrap();
+                //         seen.zero_bits();
+                //         let ns = nimbers_ref.read().unwrap();
+                //         for i in 1..rules_cpy.len() {
+                //             if rules_cpy[i].divide {
+                //                 let mut m = ns.rare.len();
+                //                 while m > 0 && n <= i + ns.rare[m - 1].0 {
+                //                     m -= 1;
+                //                 }
+
+                //                 for ridx in (0..m).skip(tid).step_by(threads) {
+                //                     let (idx, x) = ns.rare[ridx];
+                //                     let s = (x ^ ns.g[n - i - idx]) as usize;
+                //                     seen.set_bit(s);
+                //                 }
+                //             }
+                //         }
+                //         result_sender_cpy.send(tid).unwrap();
+                //     }
+                // };
+                //
+                let f = move || {
+                    for (first_common, n, i, from, to) in runner_recv {
+                        let ns = nimbers_ref.read().unwrap();
+                        let mut mex = mexs_ref.write().unwrap();
+                        // let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
+
+                        // why does this need a cast to Rule?
+                        if (rules_cpy[i] as Rule).divide {
+                            for j in from..=to {
+                                let a = ns.g[j];
+                                let b = ns.g[n - i - j];
+                                let loc = (a ^ b) as usize;
+
+                                if loc < first_common && !mex.get(loc) {
+                                // if loc < first_common {
+                                    mex.set_bit(loc);
+                                }
+                                // mex.set_bit(loc);
+                            }
+                        }
+                        prove_result_sender_cpy.send(tid).unwrap();
+                    }
+                };
+
+                spawn(f)
+            })
+            .collect();
 
         GameT {
             rules,
@@ -917,9 +1005,13 @@ impl GameT {
             bits: Bits::new(),
             threads,
             seens,
-            handles,
-            runners,
-            result_recv,
+            rc_handles,
+            rc_runners,
+            rc_result_recv,
+            mexs,
+            prove_handles,
+            prove_runners,
+            prove_result_recv,
         }
     }
 
@@ -1067,7 +1159,6 @@ impl GameT {
             }
         }
 
-
         if n.is_power_of_two() {
             self.resize(n);
         }
@@ -1183,6 +1274,10 @@ impl GameT {
             *seen.write().unwrap() = Bin::make(self.stats.largest_nimber);
         }
 
+        for mex in self.mexs.iter() {
+            *mex.write().unwrap() = Bin::make(self.stats.largest_nimber);
+        }
+
         let mut new_rares = vec![];
         {
             let ns = self.nimbers.read().unwrap();
@@ -1200,46 +1295,85 @@ impl GameT {
         }
     }
 
+
     fn prove(&mut self, n: usize) -> Nimber {
-        let ns = self.nimbers.read().unwrap();
+        // let ns = self.nimbers.read().unwrap();
         let first_common = self
             .bits
             .seen
             .find_first_unset_also_unset_in(&self.bits.rare);
 
+        // let mut mex = self.bits.seen.clone();
+        // let mut remaining_unset = mex.count_unset_upto(first_common);
+
         let mut mex = self.bits.seen.copy_up_to_inclusive(first_common + 1);
         let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
+
+        for m in self.mexs.iter() {
+            *m.write().unwrap() = mex.clone();
+        }
 
         for i in 1..self.rules.len() {
             if remaining_unset == 0 {
                 return first_common as Nimber;
             }
 
-            if self.rules[i].divide {
-                for j in 1..=(n - i) / 2 {
-                    let a = ns.g[j];
-                    let b = ns.g[n - i - j];
-                    let loc = (a ^ b) as usize;
+            let step = 4096;
 
-                    if loc < first_common && !mex.get(loc) {
-                        // a rare value smaller than first_common and not previously observed found
-                        mex.set_bit(loc);
-                        remaining_unset -= 1;
-                        if remaining_unset == 0 {
-                            // all smaller values than first_common found, the value is the smallest
-                            // not observed common
-                            self.stats.prev_values = std::cmp::max(self.stats.prev_values, j);
-                            return first_common as Nimber;
-                            // break
+            if self.rules[i].divide {
+                let last = (n - i) / 2;
+                let mut sent = self.threads - 1;
+                for (j, tid) in (1..=last).step_by(step).zip((0..self.threads).cycle()) {
+                    sent = tid;
+                    let from = j;
+                    let to = std::cmp::min(j + step - 1, last);
+                    self.prove_runners[tid]
+                        .send((first_common, n, i, from, to))
+                        .unwrap();
+
+                    if tid == self.threads - 1 {
+                        for _ in 0..self.threads {
+                            let t = self.prove_result_recv.recv().unwrap();
+                            mex.set_all(&self.mexs[t].read().unwrap());
                         }
+                        remaining_unset = mex.count_unset() - 1;
+                        // remaining_unset = mex.count_unset_upto(first_common);
+
+                        if remaining_unset == 0 {
+                            return first_common as Nimber;
+                        }
+
+                    }
+                }
+
+                if sent != self.threads - 1 {
+
+                    for _ in 0..=sent {
+                        let t = self.prove_result_recv.recv().unwrap();
+                        mex.set_all(&self.mexs[t].read().unwrap());
+                    }
+                    // remaining_unset = mex.count_unset() - 1;
+                    remaining_unset = mex.count_unset_upto(first_common);
+
+                    if remaining_unset == 0 {
+                        return first_common as Nimber;
                     }
                 }
             }
+
+            remaining_unset = mex.count_unset_upto(first_common);
         }
+        // for i in 1..self.rules.len() {
+        //     if remaining_unset == 0 {
+        //         return first_common as Nimber;
+        //     }
+
+        // }
+
 
         let nim = mex.lowest_unset() as Nimber;
-        self.stats.latest_rare = nim;
-        self.stats.latest_rare_index = n;
+        // self.stats.latest_rare = nim;
+        // self.stats.latest_rare_index = n;
 
         nim
     }
@@ -1311,27 +1445,27 @@ impl GameT {
     // }
 
     fn iterate_over_r_xor_c(&mut self, n: usize) {
-        for t in self.runners.iter() {
+        for t in self.rc_runners.iter() {
             t.send(n).unwrap();
         }
         for _ in 0..self.threads {
-            let tid = self.result_recv.recv().unwrap();
+            let tid = self.rc_result_recv.recv().unwrap();
 
             self.bits.seen.set_all(&self.seens[tid].read().unwrap());
         }
 
-    //     for i in 1..self.rules.len() {
-    //         if self.rules[i].divide {
-    //             let mut m = self.nimbers.rare.len();
-    //             while m > 0 && n <= i + self.nimbers.rare[m - 1].0 {
-    //                 m -= 1;
-    //             }
-    //             for (idx, x) in self.nimbers.rare[0..m].iter() {
-    //                 let s = (x ^ self.nimbers.g[n - i - idx]) as usize;
-    //                 self.bits.seen.set_bit(s);
-    //             }
-    //         }
-    //     }
+        //     for i in 1..self.rules.len() {
+        //         if self.rules[i].divide {
+        //             let mut m = self.nimbers.rare.len();
+        //             while m > 0 && n <= i + self.nimbers.rare[m - 1].0 {
+        //                 m -= 1;
+        //             }
+        //             for (idx, x) in self.nimbers.rare[0..m].iter() {
+        //                 let s = (x ^ self.nimbers.g[n - i - idx]) as usize;
+        //                 self.bits.seen.set_bit(s);
+        //             }
+        //         }
+        //     }
     }
 
     // fn iterate_over_r_xor_c_back(&mut self, n: usize) {
