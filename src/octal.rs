@@ -49,6 +49,15 @@ cfg_if::cfg_if! {
     }
 }
 
+pub trait GameSolver {
+    fn init(&mut self);
+    fn rules_len(&self) -> usize;
+    fn calc_rc(&mut self, n: usize);
+    fn occasional_info(&self, n:usize, start: &Instant);
+    fn dump_freqs(&self, n: usize, start: &Instant);
+    fn dump_stats(&self, n: usize, start: &Instant);
+}
+
 #[derive(Clone)]
 pub struct Bin {
     bits: BitV,
@@ -873,6 +882,92 @@ pub struct GameT {
     pub prove_handles: Vec<std::thread::JoinHandle<()>>,
 }
 
+impl GameSolver for GameT {
+    fn init(&mut self) {
+        self.initialize();
+        let first_uninitialized = self.rules.len();
+
+        {
+            let ns = self.nimbers.read().unwrap();
+            self.stats.initialize(&ns.g, first_uninitialized);
+        }
+        self.resize(first_uninitialized - 1);
+    }
+
+    fn rules_len(&self) -> usize {
+        self.rules.len()
+    }
+
+    fn calc_rc(&mut self, n: usize) {
+        let nim = self.rc(n);
+        self.set_next_g_n(n, nim);
+    }
+
+    fn occasional_info(&self, n: usize, start: &Instant) {
+        let max = self.nimbers.read().unwrap().g.len();
+        let inc = if max > (2 as usize).pow(30) {
+            max / 1000
+        } else {
+            max / 100
+        };
+
+        if n % 100000 == 0 {
+            self.dump_stats(n, &start);
+        }
+
+        if n.is_power_of_two() {
+            self.dump_freqs(n, start);
+        }
+
+        if n % inc == 0 {
+            let rate = n as u64 / std::cmp::max(1, start.elapsed().as_secs());
+            let estimated_total = max as u64 / rate;
+            let estimated_left = (max - n) as u64 / rate;
+            println!(
+                "{}%, will finish in approximately: {}s (total {}s)",
+                (n * 100 / max),
+                estimated_left,
+                estimated_total,
+            )
+        }
+    }
+
+    fn dump_freqs(&self, n: usize, start: &Instant) {
+        println!("{} freqs after {:?}", n, start.elapsed());
+
+        let fs: Vec<Freq> = self
+            .stats
+            .frequencies
+            .iter()
+            .enumerate()
+            .map(|(nimber, &frequency)| Freq {
+                nimber,
+                frequency,
+                rare: self.bits.rare.get(nimber),
+            })
+            .collect();
+
+        let formatted_json = serde_json::to_string_pretty(&fs).unwrap();
+        println!("{}", formatted_json);
+    }
+
+    fn dump_stats(&self, n: usize, start: &Instant) {
+        println!(
+            " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {}, rares={}, latest_rare={} @ {}, G({}) = {}",
+            start.elapsed().as_secs(),
+            n as u64 / std::cmp::max(1, start.elapsed().as_secs()),
+            self.stats.prev_values,
+            self.stats.largest_nimber,
+            self.stats.largest_nimber_index,
+            self.nimbers.read().unwrap().rare.len() + 1, // +1 for (0, 0)
+            self.stats.latest_rare,
+            self.stats.latest_rare_index,
+            n,
+            self.nimbers.read().unwrap().g[n],
+        );
+    }
+}
+
 impl GameT {
     pub fn new(
         rules_str: &str,
@@ -1049,16 +1144,6 @@ impl GameT {
         }
     }
 
-    pub fn init(&mut self) {
-        self.initialize();
-        let first_uninitialized = self.rules.len();
-
-        {
-            let ns = self.nimbers.read().unwrap();
-            self.stats.initialize(&ns.g, first_uninitialized);
-        }
-        self.resize(first_uninitialized - 1);
-    }
 
     pub fn set_seen_bits_from_some_moves(&mut self, n: usize) {
         // set the non-xor values
@@ -1164,21 +1249,6 @@ impl GameT {
         }
     }
 
-    pub fn dump_stats(&self, n: usize, start: &Instant) {
-        println!(
-            " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {}, rares={}, latest_rare={} @ {}, G({}) = {}",
-            start.elapsed().as_secs(),
-            n as u64 / std::cmp::max(1, start.elapsed().as_secs()),
-            self.stats.prev_values,
-            self.stats.largest_nimber,
-            self.stats.largest_nimber_index,
-            self.nimbers.read().unwrap().rare.len() + 1, // +1 for (0, 0)
-            self.stats.latest_rare,
-            self.stats.latest_rare_index,
-            n,
-            self.nimbers.read().unwrap().g[n],
-        );
-    }
 
     pub fn dump_stats_back(&self, skipped: usize, n: usize, start: &Instant) {
         let ns = self.nimbers.read().unwrap();
@@ -1195,35 +1265,6 @@ impl GameT {
             n,
             ns.g_back[n % ns.g_back.len()],
         );
-    }
-
-    pub fn occasional_info(&mut self, n: usize, start: &Instant) {
-        let max = self.nimbers.read().unwrap().g.len();
-        let inc = if max > (2 as usize).pow(30) {
-            max / 1000
-        } else {
-            max / 100
-        };
-
-        if n % 100000 == 0 {
-            self.dump_stats(n, &start);
-        }
-
-        if n.is_power_of_two() {
-            self.dump_freqs(n, start);
-        }
-
-        if n % inc == 0 {
-            let rate = n as u64 / std::cmp::max(1, start.elapsed().as_secs());
-            let estimated_total = max as u64 / rate;
-            let estimated_left = (max - n) as u64 / rate;
-            println!(
-                "{}%, will finish in approximately: {}s (total {}s)",
-                (n * 100 / max),
-                estimated_left,
-                estimated_total,
-            )
-        }
     }
 
     pub fn occasional_info_back(&mut self, skipped: usize, n: usize, start: &Instant) {
@@ -1246,24 +1287,6 @@ impl GameT {
         self.set_next_g_back(n, nim);
     }
 
-    pub fn dump_freqs(&self, n: usize, start: &Instant) {
-        println!("{} freqs after {:?}", n, start.elapsed());
-
-        let fs: Vec<Freq> = self
-            .stats
-            .frequencies
-            .iter()
-            .enumerate()
-            .map(|(nimber, &frequency)| Freq {
-                nimber,
-                frequency,
-                rare: self.bits.rare.get(nimber),
-            })
-            .collect();
-
-        let formatted_json = serde_json::to_string_pretty(&fs).unwrap();
-        println!("{}", formatted_json);
-    }
 
     fn resize(&mut self, n: usize) {
         self.stats.resize_frequencies();

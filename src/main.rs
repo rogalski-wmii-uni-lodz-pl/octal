@@ -1,10 +1,11 @@
 // use game::gen_rares;
+use clap::Parser;
+use glob;
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
-use glob;
 
 pub mod octal;
 
@@ -45,24 +46,59 @@ fn load(max: usize, path: &Path) -> Vec<octal::Nimber> {
     nimbers
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
+#[derive(Parser, Debug)]
+#[command(version)]
+struct Args {
+    /// games rules string
+    #[arg(short, long, default_value_t = String::from("0.034"))]
+    rules: String,
 
-    let rules_str = if args.len() > 1 { &args[1] } else { "0.034" };
+    /// amount of nimbers stored from 0
+    #[arg(short, long, default_value_t = 1_000_000)]
+    max_full_memory: usize,
 
-    let max_full_memory = if args.len() > 2 {
-        args[2].parse::<usize>().unwrap()
-    } else {
-        1_000_000
-    };
+    /// continue after max_full_memory is achieved
+    #[arg(short('T'), long, default_value_t = false)]
+    continue_with_tail_memory: bool,
 
-    let max_tail_memory = if args.len() > 3 {
-        args[3].parse::<usize>().unwrap()
-    } else {
-        0
-    };
+    /// number of threads
+    #[arg(short, long, default_value_t = 10)]
+    threads: usize,
+}
 
+
+fn run<G : octal::GameSolver>(args : &Args, g : &mut G) {
     let start = Instant::now();
+    g.init();
+    for n in g.rules_len()..args.max_full_memory {
+        g.calc_rc(n);
+        g.occasional_info(n, &start);
+    }
+    g.dump_freqs(args.max_full_memory, &start);
+    g.dump_stats(args.max_full_memory - 1, &start);
+}
+
+fn main() {
+    let args = Args::parse();
+
+    println!("{:?}", args);
+
+    // let args: Vec<String> = env::args().collect();
+
+    // let rules_str = if args.len() > 1 { &args[1] } else { "0.034" };
+
+    // let max_full_memory = if args.len() > 2 {
+    //     args[2].parse::<usize>().unwrap()
+    // } else {
+    //     1_000_000
+    // };
+
+    // let max_tail_memory = if args.len() > 3 {
+    //     args[3].parse::<usize>().unwrap()
+    // } else {
+    //     0
+    // };
+
 
     println!(
         "nimber bitsize {}, maxval {}",
@@ -70,14 +106,27 @@ fn main() {
         octal::Nimber::MAX
     );
 
-    let mut g = octal::GameT::new(rules_str, max_full_memory, max_tail_memory, 10);
-    g.init();
-    for n in g.rules.len()..max_full_memory {
-        g.calc_rc(n);
-        g.occasional_info(n, &start);
-    }
-    g.dump_freqs(max_full_memory, &start);
-    g.dump_stats(max_full_memory - 1, &start);
+    let max_tail_memory = if args.continue_with_tail_memory {
+        args.max_full_memory
+    } else {
+        0
+    };
+
+    let mut g = octal::GameT::new(
+        &args.rules,
+        args.max_full_memory,
+        max_tail_memory,
+        args.threads,
+    );
+    run(&args, &mut g);
+    // g.init();
+    // for n in g.rules.len()..args.max_full_memory {
+    //     g.calc_rc(n);
+    //     g.occasional_info(n, &start);
+    // }
+    // g.dump_freqs(args.max_full_memory, &start);
+    // g.dump_stats(args.max_full_memory - 1, &start);
+
     // let start_period = Instant::now();
 
     // let period_found = g.check_period(max_full_memory);
