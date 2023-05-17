@@ -51,8 +51,89 @@ cfg_if::cfg_if! {
 
 pub trait GameSolver {
     fn init(&mut self);
+    fn rules(&self) -> &Vec<Rule>;
     fn rules_len(&self) -> usize;
-    fn calc_rc(&mut self, n: usize);
+    fn bits(&mut self) -> &mut Bits;
+    fn set_seen_bits_from_some_moves(&mut self, n: usize);
+    fn iterate_over_r_xor_c(&mut self, n: usize);
+    fn prove(&mut self, n: usize) -> Nimber;
+
+
+    fn zero_seen_bits(&mut self) {
+        self.bits().seen.zero_bits();
+    }
+
+    fn set_0th_bit_if_can_be_divided_in_half(&mut self, n: usize) {
+        // set an obvious 0, if the game has a dividing move to any pair (x, x)
+        for i in 1..self.rules().len() {
+            if self.rules()[i].divide && (n - i) & 1 == 0 {
+                self.bits().seen.set_bit(0);
+                break;
+            }
+        }
+    }
+
+
+    /// Compute the nimber g[n] leveraging the sparce space phenonmenon, under the following
+    /// assumptions:
+    /// * self.nimbers.g[0..n] were computed correctly, accodring to the rules of some octal game,
+    /// * n is at least rules.len(),
+    /// * self.bits.rare is a binary vector which in which a set bit at position i signifies that i
+    /// is a member of R
+    /// * the self.nimbers.rare vector represents a correct decmposition into R and C sets (that is
+    /// values from g are decomposed into two mutually exclusive sets R and C such that for all x,
+    /// y in R. x ^ y in R, and for all x, y in C, x ^ y in R, and for all x in R, y in C, x ^ y in
+    /// C).  * rare_idx_and_nimber is a vector in which contains all pairs (index, nimber) for
+    /// nimbers from g such that rares[nimber] is true (in python terms: rare_idx_and_nimber =
+    /// [(index,nimber) for nimber in g if rares[nimber]]).
+    ///
+    /// The sparse space phenomenon is an observeable phenomenon in at least some octal games, where
+    /// the set of nimbers is divisible into two sets: the common (C) and the rare (R) sets, such that:
+    /// * for all x, y in R. x ^ y in R,
+    /// * for all x, y in C, x ^ y in R,
+    /// * for all x in R, y in C, x ^ y in C.
+    /// Since most successsors of a position are in the form x ^ y where both x and y are common, then
+    /// a position in an octal game is more likely to *not* have a rare value.
+    /// It is therefore worthwhile to first check the values of all successsors in the from x ^ y,
+    /// where x is rare.
+    /// Since according to the Sprague-Grundy theorem, the nim-value of a position `n` is the smallest
+    /// natural number such, that is not the nim-value of `n`'s successors, this eliminates all possible
+    /// common values from the set of possible values of the position `n`.
+    /// The most likely candidate for the  nim-value of `n` is therefore the smallest common value, or a
+    /// new rare value (but this is unlikely).
+    /// To prove that it is the common value, we need to iterate through the unchecked successors, and
+    /// eliminate rare values smaller than the candidate.
+    /// If this is successful, then the nim-value of `n` is the candidate.
+    /// If this is unsuccessful, then the nim-value of `n` is rare.
+    ///
+    /// The advantage of this algorithm is that if number of elements of R is small (if values in R
+    /// appear in g at most some constant amount of times), then the algorithm approaches a linear time
+    /// complexity.  This is especially important, since the time complexity of the naive approach has
+    /// quadratic time complexity wrt n.
+    ///
+    /// Note an observation made by dr Piotr Beling, that this algorithm works also when the chosen
+    /// R and C do not correctly contain infrequent and frequent values in g, but as long as the
+    /// two sens fulfil the criteria outlined above, the algorithm works correctly (although it may
+    /// work even slower than the naive).  For instance, if we assume that all values are in R, and
+    /// C is an empty set, then this algorithm still correctly identifies nimbers.
+    fn rc(&mut self, n: usize) -> Nimber {
+        self.zero_seen_bits();
+
+        self.set_seen_bits_from_some_moves(n);
+        self.set_0th_bit_if_can_be_divided_in_half(n);
+        self.iterate_over_r_xor_c(n);
+
+        self.prove(n)
+    }
+
+
+    fn set_next_g_n(&mut self, n: usize, nim: Nimber);
+
+    fn calc_rc(&mut self, n: usize) {
+        let nim = self.rc(n);
+        self.set_next_g_n(n, nim);
+    }
+
     fn occasional_info(&self, n:usize, start: &Instant);
     fn dump_freqs(&self, n: usize, start: &Instant);
     fn dump_stats(&self, n: usize, start: &Instant);
@@ -378,6 +459,194 @@ struct Freq {
     rare: bool,
 }
 
+impl GameSolver for Game {
+    fn rules(&self) -> &Vec<Rule> {
+        &self.rules
+    }
+
+    fn bits(&mut self) -> &mut Bits {
+        &mut self.bits
+    }
+
+    fn prove(&mut self, n: usize) -> Nimber {
+        let first_common = self
+            .bits
+            .seen
+            .find_first_unset_also_unset_in(&self.bits.rare);
+
+        let mut mex = self.bits.seen.copy_up_to_inclusive(first_common + 1);
+        let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
+
+        for i in 1..self.rules.len() {
+            if remaining_unset == 0 {
+                return first_common as Nimber;
+            }
+
+            if self.rules[i].divide {
+                for j in 1..=(n - i) / 2 {
+                    let a = self.nimbers.g[j];
+                    let b = self.nimbers.g[n - i - j];
+                    let loc = (a ^ b) as usize;
+
+                    if loc < first_common && !mex.get(loc) {
+                        // a rare value smaller than first_common and not previously observed found
+                        mex.set_bit(loc);
+                        remaining_unset -= 1;
+                        if remaining_unset == 0 {
+                            // all smaller values than first_common found, the value is the smallest
+                            // not observed common
+                            self.stats.prev_values = std::cmp::max(self.stats.prev_values, j);
+                            return first_common as Nimber;
+                            // break
+                        }
+                    }
+                }
+            }
+        }
+
+        let nim = mex.lowest_unset() as Nimber;
+        self.stats.latest_rare = nim;
+        self.stats.latest_rare_index = n;
+
+        nim
+    }
+
+
+    fn iterate_over_r_xor_c(&mut self, n: usize) {
+        // iterate over x ^ y such that x is in R
+        for i in 1..self.rules.len() {
+            if self.rules[i].divide {
+                let mut m = self.nimbers.rare.len();
+                while m > 0 && n <= i + self.nimbers.rare[m - 1].0 {
+                    m -= 1;
+                }
+                for (idx, x) in self.nimbers.rare[0..m].iter() {
+                    let s = (x ^ self.nimbers.g[n - i - idx]) as usize;
+                    self.bits.seen.set_bit(s);
+                }
+            }
+        }
+    }
+
+
+
+    fn set_seen_bits_from_some_moves(&mut self, n: usize) {
+        // set the non-xor values
+        for i in 1..self.rules.len() {
+            if self.rules[i].some {
+                self.bits.seen.set_bit(self.nimbers.g[n - i] as usize);
+            }
+        }
+    }
+
+    fn set_next_g_n(&mut self, n: usize, nim: Nimber) {
+        self.nimbers.g[n] = nim;
+
+        if nim >= self.stats.largest_nimber {
+            self.stats.largest_nimber_index = n;
+        }
+        if nim > self.stats.largest_nimber {
+            self.stats.largest_nimber = nim;
+            println!("resizing {}", nim);
+            self.resize(n);
+            println!("resizing finished");
+        }
+
+        self.stats.frequencies[nim as usize] += 1;
+
+        if n < self.nimbers.g.len() && self.bits.rare.get(nim as usize) {
+            self.nimbers.rare.push((n, nim));
+        }
+
+        if n.is_power_of_two() {
+            self.resize(n);
+        }
+    }
+
+    fn init(&mut self) {
+        self.initialize();
+        let first_uninitialized = self.rules.len();
+
+        self.stats.initialize(&self.nimbers.g, first_uninitialized);
+        self.resize(first_uninitialized - 1);
+    }
+
+    fn rules_len(&self) -> usize {
+        self.rules.len()
+    }
+
+
+    // fn calc_rc(&mut self, n: usize) {
+    //     let nim = self.rc(n);
+    //     self.set_next_g_n(n, nim);
+    // }
+
+    fn occasional_info(&self, n: usize, start: &Instant) {
+        let max = self.nimbers.g.len();
+        let inc = if max > (2 as usize).pow(30) {
+            max / 1000
+        } else {
+            max / 100
+        };
+
+        if n % 100000 == 0 {
+            self.dump_stats(n, &start);
+        }
+
+        if n.is_power_of_two() {
+            self.dump_freqs(n, start);
+        }
+
+        if n % inc == 0 {
+            let rate = n as u64 / std::cmp::max(1, start.elapsed().as_secs());
+            let estimated_total = max as u64 / rate;
+            let estimated_left = (max - n) as u64 / rate;
+            println!(
+                "{}%, will finish in approximately: {}s (total {}s)",
+                (n * 100 / max),
+                estimated_left,
+                estimated_total,
+            )
+        }
+    }
+
+    fn dump_freqs(&self, n: usize, start: &Instant) {
+        println!("{} freqs after {:?}", n, start.elapsed());
+
+        let fs: Vec<Freq> = self
+            .stats
+            .frequencies
+            .iter()
+            .enumerate()
+            .map(|(nimber, &frequency)| Freq {
+                nimber,
+                frequency,
+                rare: self.bits.rare.get(nimber),
+            })
+            .collect();
+
+        let formatted_json = serde_json::to_string_pretty(&fs).unwrap();
+        println!("{}", formatted_json);
+    }
+
+    fn dump_stats(&self, n: usize, start: &Instant) {
+        println!(
+            " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {}, rares={}, latest_rare={} @ {}, G({}) = {}",
+            start.elapsed().as_secs(),
+            n as u64 / std::cmp::max(1, start.elapsed().as_secs()),
+            self.stats.prev_values,
+            self.stats.largest_nimber,
+            self.stats.largest_nimber_index,
+            self.nimbers.rare.len() + 1, // +1 for (0, 0)
+            self.stats.latest_rare,
+            self.stats.latest_rare_index,
+            n,
+            self.nimbers.g[n],
+        );
+    }
+
+}
+
 impl Game {
     pub fn new(rules_str: &str, max_full_memory: usize, max_tail_memory: usize) -> Self {
         Game {
@@ -429,14 +698,6 @@ impl Game {
         self.resize(first_uninitialized - 1);
     }
 
-    pub fn set_seen_bits_from_some_moves(&mut self, n: usize) {
-        // set the non-xor values
-        for i in 1..self.rules.len() {
-            if self.rules[i].some {
-                self.bits.seen.set_bit(self.nimbers.g[n - i] as usize);
-            }
-        }
-    }
 
     pub fn set_seen_bits_from_some_moves_back(&mut self, n: usize) {
         // set the non-xor values
@@ -445,58 +706,6 @@ impl Game {
                 self.bits.seen.set_bit(self.nimbers.last(n - i) as usize);
             }
         }
-    }
-
-    /// Compute the nimber g[n] leveraging the sparce space phenonmenon, under the following
-    /// assumptions:
-    /// * self.nimbers.g[0..n] were computed correctly, accodring to the rules of some octal game,
-    /// * n is at least rules.len(),
-    /// * self.bits.rare is a binary vector which in which a set bit at position i signifies that i
-    /// is a member of R
-    /// * the self.nimbers.rare vector represents a correct decmposition into R and C sets (that is
-    /// values from g are decomposed into two mutually exclusive sets R and C such that for all x,
-    /// y in R. x ^ y in R, and for all x, y in C, x ^ y in R, and for all x in R, y in C, x ^ y in
-    /// C).  * rare_idx_and_nimber is a vector in which contains all pairs (index, nimber) for
-    /// nimbers from g such that rares[nimber] is true (in python terms: rare_idx_and_nimber =
-    /// [(index,nimber) for nimber in g if rares[nimber]]).
-    ///
-    /// The sparse space phenomenon is an observeable phenomenon in at least some octal games, where
-    /// the set of nimbers is divisible into two sets: the common (C) and the rare (R) sets, such that:
-    /// * for all x, y in R. x ^ y in R,
-    /// * for all x, y in C, x ^ y in R,
-    /// * for all x in R, y in C, x ^ y in C.
-    /// Since most successsors of a position are in the form x ^ y where both x and y are common, then
-    /// a position in an octal game is more likely to *not* have a rare value.
-    /// It is therefore worthwhile to first check the values of all successsors in the from x ^ y,
-    /// where x is rare.
-    /// Since according to the Sprague-Grundy theorem, the nim-value of a position `n` is the smallest
-    /// natural number such, that is not the nim-value of `n`'s successors, this eliminates all possible
-    /// common values from the set of possible values of the position `n`.
-    /// The most likely candidate for the  nim-value of `n` is therefore the smallest common value, or a
-    /// new rare value (but this is unlikely).
-    /// To prove that it is the common value, we need to iterate through the unchecked successors, and
-    /// eliminate rare values smaller than the candidate.
-    /// If this is successful, then the nim-value of `n` is the candidate.
-    /// If this is unsuccessful, then the nim-value of `n` is rare.
-    ///
-    /// The advantage of this algorithm is that if number of elements of R is small (if values in R
-    /// appear in g at most some constant amount of times), then the algorithm approaches a linear time
-    /// complexity.  This is especially important, since the time complexity of the naive approach has
-    /// quadratic time complexity wrt n.
-    ///
-    /// Note an observation made by dr Piotr Beling, that this algorithm works also when the chosen
-    /// R and C do not correctly contain infrequent and frequent values in g, but as long as the
-    /// two sens fulfil the criteria outlined above, the algorithm works correctly (although it may
-    /// work even slower than the naive).  For instance, if we assume that all values are in R, and
-    /// C is an empty set, then this algorithm still correctly identifies nimbers.
-    pub fn rc(&mut self, n: usize) -> Nimber {
-        self.bits.seen.zero_bits();
-
-        self.set_seen_bits_from_some_moves(n);
-        self.set_0th_bit_if_can_be_divided_in_half(n);
-        self.iterate_over_r_xor_c(n);
-
-        self.prove(n)
     }
 
     pub fn rc_back(&mut self, n: usize) -> Nimber {
@@ -536,29 +745,6 @@ impl Game {
         self.bits.seen.lowest_unset() as Nimber
     }
 
-    pub fn set_next_g_n(&mut self, n: usize, nim: Nimber) {
-        self.nimbers.g[n] = nim;
-
-        if nim >= self.stats.largest_nimber {
-            self.stats.largest_nimber_index = n;
-        }
-        if nim > self.stats.largest_nimber {
-            self.stats.largest_nimber = nim;
-            println!("resizing {}", nim);
-            self.resize(n);
-            println!("resizing finished");
-        }
-
-        self.stats.frequencies[nim as usize] += 1;
-
-        if n < self.nimbers.g.len() && self.bits.rare.get(nim as usize) {
-            self.nimbers.rare.push((n, nim));
-        }
-
-        if n.is_power_of_two() {
-            self.resize(n);
-        }
-    }
 
     pub fn set_next_g_back(&mut self, n: usize, nim: Nimber) {
         let loc = n % self.nimbers.g_back.len();
@@ -585,22 +771,6 @@ impl Game {
         }
     }
 
-    pub fn dump_stats(&self, n: usize, start: &Instant) {
-        println!(
-            " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {}, rares={}, latest_rare={} @ {}, G({}) = {}",
-            start.elapsed().as_secs(),
-            n as u64 / std::cmp::max(1, start.elapsed().as_secs()),
-            self.stats.prev_values,
-            self.stats.largest_nimber,
-            self.stats.largest_nimber_index,
-            self.nimbers.rare.len() + 1, // +1 for (0, 0)
-            self.stats.latest_rare,
-            self.stats.latest_rare_index,
-            n,
-            self.nimbers.g[n],
-        );
-    }
-
     pub fn dump_stats_back(&self, skipped: usize, n: usize, start: &Instant) {
         println!(
             " {:10}s ({:.2} nimbers/s), prev={}, largest={} @ {}, rares={}, latest_rare={} @ {}, G({}) = {}",
@@ -617,34 +787,6 @@ impl Game {
         );
     }
 
-    pub fn occasional_info(&mut self, n: usize, start: &Instant) {
-        let max = self.nimbers.g.len();
-        let inc = if max > (2 as usize).pow(30) {
-            max / 1000
-        } else {
-            max / 100
-        };
-
-        if n % 100000 == 0 {
-            self.dump_stats(n, &start);
-        }
-
-        if n.is_power_of_two() {
-            self.dump_freqs(n, start);
-        }
-
-        if n % inc == 0 {
-            let rate = n as u64 / std::cmp::max(1, start.elapsed().as_secs());
-            let estimated_total = max as u64 / rate;
-            let estimated_left = (max - n) as u64 / rate;
-            println!(
-                "{}%, will finish in approximately: {}s (total {}s)",
-                (n * 100 / max),
-                estimated_left,
-                estimated_total,
-            )
-        }
-    }
 
     pub fn occasional_info_back(&mut self, skipped: usize, n: usize, start: &Instant) {
         if n % 100000 == 0 {
@@ -671,25 +813,6 @@ impl Game {
         self.set_next_g_n(n, nim);
     }
 
-    pub fn dump_freqs(&self, n: usize, start: &Instant) {
-        println!("{} freqs after {:?}", n, start.elapsed());
-
-        let fs: Vec<Freq> = self
-            .stats
-            .frequencies
-            .iter()
-            .enumerate()
-            .map(|(nimber, &frequency)| Freq {
-                nimber,
-                frequency,
-                rare: self.bits.rare.get(nimber),
-            })
-            .collect();
-
-        let formatted_json = serde_json::to_string_pretty(&fs).unwrap();
-        println!("{}", formatted_json);
-    }
-
     fn resize(&mut self, n: usize) {
         self.stats.resize_frequencies();
         self.bits.resize(self.stats.largest_nimber);
@@ -700,49 +823,6 @@ impl Game {
                 self.nimbers.rare.push((i, self.nimbers.g[i]));
             }
         }
-    }
-
-    fn prove(&mut self, n: usize) -> Nimber {
-        let first_common = self
-            .bits
-            .seen
-            .find_first_unset_also_unset_in(&self.bits.rare);
-
-        let mut mex = self.bits.seen.copy_up_to_inclusive(first_common + 1);
-        let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
-
-        for i in 1..self.rules.len() {
-            if remaining_unset == 0 {
-                return first_common as Nimber;
-            }
-
-            if self.rules[i].divide {
-                for j in 1..=(n - i) / 2 {
-                    let a = self.nimbers.g[j];
-                    let b = self.nimbers.g[n - i - j];
-                    let loc = (a ^ b) as usize;
-
-                    if loc < first_common && !mex.get(loc) {
-                        // a rare value smaller than first_common and not previously observed found
-                        mex.set_bit(loc);
-                        remaining_unset -= 1;
-                        if remaining_unset == 0 {
-                            // all smaller values than first_common found, the value is the smallest
-                            // not observed common
-                            self.stats.prev_values = std::cmp::max(self.stats.prev_values, j);
-                            return first_common as Nimber;
-                            // break
-                        }
-                    }
-                }
-            }
-        }
-
-        let nim = mex.lowest_unset() as Nimber;
-        self.stats.latest_rare = nim;
-        self.stats.latest_rare_index = n;
-
-        nim
     }
 
     fn prove_back(&mut self, n: usize) -> Nimber {
@@ -810,22 +890,6 @@ impl Game {
         panic!("unexpectedly, larger rare value found! G({}) = {}", n, nim)
     }
 
-    fn iterate_over_r_xor_c(&mut self, n: usize) {
-        // iterate over x ^ y such that x is in R
-        for i in 1..self.rules.len() {
-            if self.rules[i].divide {
-                let mut m = self.nimbers.rare.len();
-                while m > 0 && n <= i + self.nimbers.rare[m - 1].0 {
-                    m -= 1;
-                }
-                for (idx, x) in self.nimbers.rare[0..m].iter() {
-                    let s = (x ^ self.nimbers.g[n - i - idx]) as usize;
-                    self.bits.seen.set_bit(s);
-                }
-            }
-        }
-    }
-
     fn iterate_over_r_xor_c_back(&mut self, n: usize) {
         // iterate over x ^ y such that x is in R
         for i in 1..self.rules.len() {
@@ -883,6 +947,149 @@ pub struct GameT {
 }
 
 impl GameSolver for GameT {
+    fn rules(&self) -> &Vec<Rule> {
+        &self.rules
+    }
+
+    fn bits(&mut self) -> &mut Bits {
+        &mut self.bits
+    }
+
+    fn prove(&mut self, n: usize) -> Nimber {
+        // let ns = self.nimbers.read().unwrap();
+        let first_common = self
+            .bits
+            .seen
+            .find_first_unset_also_unset_in(&self.bits.rare);
+
+        // let mut mex = self.bits.seen.clone();
+        // let mut remaining_unset = mex.count_unset_upto(first_common);
+
+        let mut mex = self.bits.seen.copy_up_to_inclusive(first_common + 1);
+        let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
+
+        for m in self.mexs.iter() {
+            *m.write().unwrap() = mex.clone();
+        }
+
+        for i in 1..self.rules.len() {
+            if remaining_unset == 0 {
+                return first_common as Nimber;
+            }
+
+            let step = 4096;
+
+            if self.rules[i].divide {
+                let last = (n - i) / 2;
+                let mut sent = self.threads - 1;
+                for (j, tid) in (1..=last).step_by(step).zip((0..self.threads).cycle()) {
+                    sent = tid;
+                    let from = j;
+                    let to = std::cmp::min(j + step - 1, last);
+                    self.prove_runners[tid]
+                        .send((first_common, n, i, from, to))
+                        .unwrap();
+
+                    if tid == self.threads - 1 {
+                        for _ in 0..self.threads {
+                            let t = self.prove_result_recv.recv().unwrap();
+                            mex.set_all(&self.mexs[t].read().unwrap());
+                        }
+                        remaining_unset = mex.count_unset() - 1;
+                        // remaining_unset = mex.count_unset_upto(first_common);
+
+                        if remaining_unset == 0 {
+                            return first_common as Nimber;
+                        }
+
+                    }
+                }
+
+                if sent != self.threads - 1 {
+
+                    for _ in 0..=sent {
+                        let t = self.prove_result_recv.recv().unwrap();
+                        mex.set_all(&self.mexs[t].read().unwrap());
+                    }
+                    // remaining_unset = mex.count_unset() - 1;
+                    remaining_unset = mex.count_unset_upto(first_common);
+
+                    if remaining_unset == 0 {
+                        return first_common as Nimber;
+                    }
+                }
+            }
+
+            remaining_unset = mex.count_unset_upto(first_common);
+        }
+        // for i in 1..self.rules.len() {
+        //     if remaining_unset == 0 {
+        //         return first_common as Nimber;
+        //     }
+
+        // }
+
+
+        let nim = mex.lowest_unset() as Nimber;
+        // self.stats.latest_rare = nim;
+        // self.stats.latest_rare_index = n;
+
+        nim
+    }
+
+
+
+    fn iterate_over_r_xor_c(&mut self, n: usize) {
+        for t in self.rc_runners.iter() {
+            t.send(n).unwrap();
+        }
+        for _ in 0..self.threads {
+            let tid = self.rc_result_recv.recv().unwrap();
+
+            self.bits.seen.set_all(&self.seens[tid].read().unwrap());
+        }
+    }
+
+    fn set_seen_bits_from_some_moves(&mut self, n: usize) {
+        // set the non-xor values
+        let ns = self.nimbers.read().unwrap();
+        for i in 1..self.rules.len() {
+            if self.rules[i].some {
+                self.bits.seen.set_bit(ns.g[n - i] as usize);
+            }
+        }
+    }
+
+    fn set_next_g_n(&mut self, n: usize, nim: Nimber) {
+        {
+            let mut ns = self.nimbers.write().unwrap();
+            ns.g[n] = nim;
+        }
+
+        if nim >= self.stats.largest_nimber {
+            self.stats.largest_nimber_index = n;
+        }
+        if nim > self.stats.largest_nimber {
+            self.stats.largest_nimber = nim;
+            println!("resizing {}", nim);
+            self.resize(n);
+            println!("resizing finished");
+        }
+
+        self.stats.frequencies[nim as usize] += 1;
+
+        {
+            let mut ns = self.nimbers.write().unwrap();
+            if n < ns.g.len() && self.bits.rare.get(nim as usize) {
+                ns.rare.push((n, nim));
+            }
+        }
+
+        if n.is_power_of_two() {
+            self.resize(n);
+        }
+    }
+
     fn init(&mut self) {
         self.initialize();
         let first_uninitialized = self.rules.len();
@@ -898,10 +1105,6 @@ impl GameSolver for GameT {
         self.rules.len()
     }
 
-    fn calc_rc(&mut self, n: usize) {
-        let nim = self.rc(n);
-        self.set_next_g_n(n, nim);
-    }
 
     fn occasional_info(&self, n: usize, start: &Instant) {
         let max = self.nimbers.read().unwrap().g.len();
@@ -1145,15 +1348,6 @@ impl GameT {
     }
 
 
-    pub fn set_seen_bits_from_some_moves(&mut self, n: usize) {
-        // set the non-xor values
-        let ns = self.nimbers.read().unwrap();
-        for i in 1..self.rules.len() {
-            if self.rules[i].some {
-                self.bits.seen.set_bit(ns.g[n - i] as usize);
-            }
-        }
-    }
 
     pub fn set_seen_bits_from_some_moves_back(&mut self, n: usize) {
         // set the non-xor values
@@ -1165,15 +1359,15 @@ impl GameT {
         }
     }
 
-    pub fn rc(&mut self, n: usize) -> Nimber {
-        self.bits.seen.zero_bits();
+    // pub fn rc(&mut self, n: usize) -> Nimber {
+    //     self.bits.seen.zero_bits();
 
-        self.set_seen_bits_from_some_moves(n);
-        self.set_0th_bit_if_can_be_divided_in_half(n);
-        self.iterate_over_r_xor_c(n);
+    //     self.set_seen_bits_from_some_moves(n);
+    //     self.set_0th_bit_if_can_be_divided_in_half(n);
+    //     self.iterate_over_r_xor_c(n);
 
-        self.prove(n)
-    }
+    //     self.prove(n)
+    // }
 
     pub fn rc_back(&mut self, n: usize) -> Nimber {
         self.bits.seen.zero_bits();
@@ -1186,35 +1380,6 @@ impl GameT {
         //self.prove_back(n)
     }
 
-    pub fn set_next_g_n(&mut self, n: usize, nim: Nimber) {
-        {
-            let mut ns = self.nimbers.write().unwrap();
-            ns.g[n] = nim;
-        }
-
-        if nim >= self.stats.largest_nimber {
-            self.stats.largest_nimber_index = n;
-        }
-        if nim > self.stats.largest_nimber {
-            self.stats.largest_nimber = nim;
-            println!("resizing {}", nim);
-            self.resize(n);
-            println!("resizing finished");
-        }
-
-        self.stats.frequencies[nim as usize] += 1;
-
-        {
-            let mut ns = self.nimbers.write().unwrap();
-            if n < ns.g.len() && self.bits.rare.get(nim as usize) {
-                ns.rare.push((n, nim));
-            }
-        }
-
-        if n.is_power_of_two() {
-            self.resize(n);
-        }
-    }
 
     pub fn set_next_g_back(&mut self, n: usize, nim: Nimber) {
         {
@@ -1319,88 +1484,6 @@ impl GameT {
     }
 
 
-    fn prove(&mut self, n: usize) -> Nimber {
-        // let ns = self.nimbers.read().unwrap();
-        let first_common = self
-            .bits
-            .seen
-            .find_first_unset_also_unset_in(&self.bits.rare);
-
-        // let mut mex = self.bits.seen.clone();
-        // let mut remaining_unset = mex.count_unset_upto(first_common);
-
-        let mut mex = self.bits.seen.copy_up_to_inclusive(first_common + 1);
-        let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
-
-        for m in self.mexs.iter() {
-            *m.write().unwrap() = mex.clone();
-        }
-
-        for i in 1..self.rules.len() {
-            if remaining_unset == 0 {
-                return first_common as Nimber;
-            }
-
-            let step = 4096;
-
-            if self.rules[i].divide {
-                let last = (n - i) / 2;
-                let mut sent = self.threads - 1;
-                for (j, tid) in (1..=last).step_by(step).zip((0..self.threads).cycle()) {
-                    sent = tid;
-                    let from = j;
-                    let to = std::cmp::min(j + step - 1, last);
-                    self.prove_runners[tid]
-                        .send((first_common, n, i, from, to))
-                        .unwrap();
-
-                    if tid == self.threads - 1 {
-                        for _ in 0..self.threads {
-                            let t = self.prove_result_recv.recv().unwrap();
-                            mex.set_all(&self.mexs[t].read().unwrap());
-                        }
-                        remaining_unset = mex.count_unset() - 1;
-                        // remaining_unset = mex.count_unset_upto(first_common);
-
-                        if remaining_unset == 0 {
-                            return first_common as Nimber;
-                        }
-
-                    }
-                }
-
-                if sent != self.threads - 1 {
-
-                    for _ in 0..=sent {
-                        let t = self.prove_result_recv.recv().unwrap();
-                        mex.set_all(&self.mexs[t].read().unwrap());
-                    }
-                    // remaining_unset = mex.count_unset() - 1;
-                    remaining_unset = mex.count_unset_upto(first_common);
-
-                    if remaining_unset == 0 {
-                        return first_common as Nimber;
-                    }
-                }
-            }
-
-            remaining_unset = mex.count_unset_upto(first_common);
-        }
-        // for i in 1..self.rules.len() {
-        //     if remaining_unset == 0 {
-        //         return first_common as Nimber;
-        //     }
-
-        // }
-
-
-        let nim = mex.lowest_unset() as Nimber;
-        // self.stats.latest_rare = nim;
-        // self.stats.latest_rare_index = n;
-
-        nim
-    }
-
     // fn prove_back(&mut self, n: usize) -> Nimber {
     //     let ns = self.nimbers.read().unwrap();
     //     let first_common = self
@@ -1467,29 +1550,6 @@ impl GameT {
     //     panic!("unexpectedly, larger rare value found! G({}) = {}", n, nim)
     // }
 
-    fn iterate_over_r_xor_c(&mut self, n: usize) {
-        for t in self.rc_runners.iter() {
-            t.send(n).unwrap();
-        }
-        for _ in 0..self.threads {
-            let tid = self.rc_result_recv.recv().unwrap();
-
-            self.bits.seen.set_all(&self.seens[tid].read().unwrap());
-        }
-
-        //     for i in 1..self.rules.len() {
-        //         if self.rules[i].divide {
-        //             let mut m = self.nimbers.rare.len();
-        //             while m > 0 && n <= i + self.nimbers.rare[m - 1].0 {
-        //                 m -= 1;
-        //             }
-        //             for (idx, x) in self.nimbers.rare[0..m].iter() {
-        //                 let s = (x ^ self.nimbers.g[n - i - idx]) as usize;
-        //                 self.bits.seen.set_bit(s);
-        //             }
-        //         }
-        //     }
-    }
 
     // fn iterate_over_r_xor_c_back(&mut self, n: usize) {
     //     // iterate over x ^ y such that x is in R
@@ -1504,15 +1564,15 @@ impl GameT {
     //     }
     // }
 
-    fn set_0th_bit_if_can_be_divided_in_half(&mut self, n: usize) {
-        // set an obvious 0, if the game has a dividing move to any pair (x, x)
-        for i in 1..self.rules.len() {
-            if self.rules[i].divide && (n - i) & 1 == 0 {
-                self.bits.seen.set_bit(0);
-                break;
-            }
-        }
-    }
+    // fn set_0th_bit_if_can_be_divided_in_half(&mut self, n: usize) {
+    //     // set an obvious 0, if the game has a dividing move to any pair (x, x)
+    //     for i in 1..self.rules.len() {
+    //         if self.rules[i].divide && (n - i) & 1 == 0 {
+    //             self.bits.seen.set_bit(0);
+    //             break;
+    //         }
+    //     }
+    // }
 
     // pub fn check_period(&self, n: usize) -> bool {
     //     for period in 1..n {

@@ -83,23 +83,6 @@ fn main() {
 
     println!("{:?}", args);
 
-    // let args: Vec<String> = env::args().collect();
-
-    // let rules_str = if args.len() > 1 { &args[1] } else { "0.034" };
-
-    // let max_full_memory = if args.len() > 2 {
-    //     args[2].parse::<usize>().unwrap()
-    // } else {
-    //     1_000_000
-    // };
-
-    // let max_tail_memory = if args.len() > 3 {
-    //     args[3].parse::<usize>().unwrap()
-    // } else {
-    //     0
-    // };
-
-
     println!(
         "nimber bitsize {}, maxval {}",
         octal::Nimber::BITS,
@@ -112,20 +95,22 @@ fn main() {
         0
     };
 
-    let mut g = octal::GameT::new(
-        &args.rules,
-        args.max_full_memory,
-        max_tail_memory,
-        args.threads,
-    );
-    run(&args, &mut g);
-    // g.init();
-    // for n in g.rules.len()..args.max_full_memory {
-    //     g.calc_rc(n);
-    //     g.occasional_info(n, &start);
-    // }
-    // g.dump_freqs(args.max_full_memory, &start);
-    // g.dump_stats(args.max_full_memory - 1, &start);
+    if args.threads == 1 {
+        let mut g = octal::Game::new(
+            &args.rules,
+            args.max_full_memory,
+            max_tail_memory,
+        );
+        run(&args, &mut g);
+    } else {
+        let mut g = octal::GameT::new(
+            &args.rules,
+            args.max_full_memory,
+            max_tail_memory,
+            args.threads,
+        );
+        run(&args, &mut g);
+    }
 
     // let start_period = Instant::now();
 
