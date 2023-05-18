@@ -119,8 +119,8 @@ fn run<G : octal::GameSolver>(args : &Args, g : &mut G) {
                 }
                 save(n, &args.rules, &buf)
             }
-            // g.calc_rc_back(n);
-            // g.occasional_info_back(last, n, &start);
+            g.calc_rc_back(n);
+            g.occasional_info_back(last, n, &start);
         }
     }
 }
