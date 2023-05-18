@@ -57,11 +57,15 @@ pub trait GameSolver {
     fn set_seen_bits_from_some_moves(&mut self, n: usize);
     fn iterate_over_r_xor_c(&mut self, n: usize);
     fn prove(&mut self, n: usize) -> Nimber;
-
+    fn nimbers_copy_to_g_back(&mut self);
+    fn nimbers_set_g_back(&mut self, loaded : Vec<Nimber>);
+    fn nimbers_get_g_back(&self, i:usize) -> Nimber;
 
     fn zero_seen_bits(&mut self) {
         self.bits().seen.zero_bits();
     }
+
+    fn check_period(&self, n: usize) -> bool;
 
     fn set_0th_bit_if_can_be_divided_in_half(&mut self, n: usize) {
         // set an obvious 0, if the game has a dividing move to any pair (x, x)
@@ -466,6 +470,33 @@ impl GameSolver for Game {
 
     fn bits(&mut self) -> &mut Bits {
         &mut self.bits
+    }
+    fn nimbers_copy_to_g_back(&mut self) {
+        self.nimbers.copy_to_g_back();
+    }
+
+    fn nimbers_set_g_back(&mut self, loaded : Vec<Nimber>) {
+        self.nimbers.g_back = loaded;
+    }
+
+    fn nimbers_get_g_back(&self, i:usize) -> Nimber {
+        self.nimbers.g_back[i]
+    }
+
+    fn check_period(&self, n: usize) -> bool {
+        for period in 1..n {
+            let mut start = n - period;
+            while start > 0 && self.nimbers.g[start - 1] == self.nimbers.g[start - 1 + period] {
+                start -= 1;
+            }
+
+            if n >= 2 * start + 2 * period + self.rules.len() - 1 {
+                println!("period start: {}\n", start);
+                println!("period: {}\n", period);
+                return true;
+            }
+        }
+        return false;
     }
 
     fn prove(&mut self, n: usize) -> Nimber {
@@ -912,22 +943,6 @@ impl Game {
             }
         }
     }
-
-    pub fn check_period(&self, n: usize) -> bool {
-        for period in 1..n {
-            let mut start = n - period;
-            while start > 0 && self.nimbers.g[start - 1] == self.nimbers.g[start - 1 + period] {
-                start -= 1;
-            }
-
-            if n >= 2 * start + 2 * period + self.rules.len() - 1 {
-                println!("period start: {}\n", start);
-                println!("period: {}\n", period);
-                return true;
-            }
-        }
-        return false;
-    }
 }
 
 pub struct GameT {
@@ -954,6 +969,37 @@ impl GameSolver for GameT {
     fn bits(&mut self) -> &mut Bits {
         &mut self.bits
     }
+
+    fn nimbers_copy_to_g_back(&mut self) {
+        self.nimbers.write().unwrap().copy_to_g_back();
+    }
+
+    fn nimbers_set_g_back(&mut self, loaded : Vec<Nimber>) {
+        self.nimbers.write().unwrap().g_back = loaded;
+    }
+
+    fn nimbers_get_g_back(&self, i:usize) -> Nimber {
+        self.nimbers.read().unwrap().g_back[i]
+    }
+
+
+    fn check_period(&self, n: usize) -> bool {
+        let nimbers = self.nimbers.read().unwrap();
+        for period in 1..n {
+            let mut start = n - period;
+            while start > 0 && nimbers.g[start - 1] == nimbers.g[start - 1 + period] {
+                start -= 1;
+            }
+
+            if n >= 2 * start + 2 * period + self.rules.len() - 1 {
+                println!("period start: {}\n", start);
+                println!("period: {}\n", period);
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     fn prove(&mut self, n: usize) -> Nimber {
         // let ns = self.nimbers.read().unwrap();
@@ -1574,21 +1620,6 @@ impl GameT {
     //     }
     // }
 
-    // pub fn check_period(&self, n: usize) -> bool {
-    //     for period in 1..n {
-    //         let mut start = n - period;
-    //         while start > 0 && self.nimbers.g[start - 1] == self.nimbers.g[start - 1 + period] {
-    //             start -= 1;
-    //         }
-
-    //         if n >= 2 * start + 2 * period + self.rules.len() - 1 {
-    //             println!("period start: {}\n", start);
-    //             println!("period: {}\n", period);
-    //             return true;
-    //         }
-    //     }
-    //     return false;
-    // }
 }
 
 #[cfg(test)]
