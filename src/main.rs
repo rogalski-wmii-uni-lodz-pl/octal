@@ -7,6 +7,7 @@ use std::time::Instant;
 use glob;
 
 pub mod octal;
+pub mod nimber_set;
 
 fn save(n: usize, rules_str: &str, buf: &[u8]) {
     let path = format!("nimbers_{}_{}", rules_str, n);
