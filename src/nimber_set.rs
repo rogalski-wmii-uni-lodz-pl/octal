@@ -27,7 +27,7 @@ pub trait NimberSetConstructor {
     fn with_max_nimber(max_nimber: u16) -> Self;
 }
 
-fn mex<U64Iter: Iterator<Item = u64>>(iter: &mut U64Iter) -> u16 {
+#[inline] fn mex<U64Iter: Iterator<Item = u64>>(iter: &mut U64Iter) -> u16 {
     let mut result = 0;
     for v in iter {
         if v == u64::MAX {
@@ -40,13 +40,13 @@ fn mex<U64Iter: Iterator<Item = u64>>(iter: &mut U64Iter) -> u16 {
 }
 
 impl Mex for [u64] {
-    #[inline] fn mex(&self) -> u16 { 
+    fn mex(&self) -> u16 { 
         mex(&mut self.iter().copied())
      }
 }
 
 impl Mex for [AtomicU64] {
-    #[inline] fn mex(&self) -> u16 {
+    fn mex(&self) -> u16 {
         mex(&mut self.iter().map(|v| v.load(Relaxed))) 
     }
 }
