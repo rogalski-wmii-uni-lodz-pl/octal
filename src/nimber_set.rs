@@ -52,21 +52,21 @@ impl Mex for [AtomicU64] {
 }
 
 impl NimberSet for [u64] {
-    unsafe fn insert_nimber_unchecked(&mut self, nimber: u16) {
+    #[inline] unsafe fn insert_nimber_unchecked(&mut self, nimber: u16) {
         *self.get_unchecked_mut((nimber/64) as usize) = 1u64 << (nimber % 64) as u64;
     }
     
-    fn insert_nimber(&mut self, nimber: u16) {
+    #[inline] fn insert_nimber(&mut self, nimber: u16) {
         self[(nimber/64) as usize] |= 1u64 << (nimber % 64) as u64;
     }
 }
 
 impl AtomicNimberSet for [AtomicU64] {
-    unsafe fn insert_nimber_unchecked(&self, nimber: u16) {
+    #[inline] unsafe fn insert_nimber_unchecked(&self, nimber: u16) {
         self.get_unchecked((nimber/64) as usize).fetch_or(1u64 << (nimber % 64) as u64, Relaxed);
     }
 
-    fn insert_nimber(&self, nimber: u16) {
+    #[inline] fn insert_nimber(&self, nimber: u16) {
         self[(nimber/64) as usize].fetch_or(1u64 << (nimber % 64) as u64, Relaxed);
     }
 }
