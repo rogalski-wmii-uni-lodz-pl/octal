@@ -6,6 +6,8 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::time::Instant;
 
+use rayon::{current_num_threads, prelude::*};
+
 /// Rule represents possible moves from a position n after removing some i tokens are removed from a heap
 ///
 /// If all is true, then 0 may be the successor of n if n == i (all tokens may be taken from the
@@ -99,6 +101,10 @@ impl Bin {
             bits: self.bits[0..x].to_owned(),
         }
     }
+
+    fn set_all_bits_from(&mut self, other: &Self) {
+        self.bits |= &other.bits
+    }
 }
 
 #[cfg(all(
@@ -151,6 +157,10 @@ impl Bin {
         Self {
             bits: ((!0) << _x) | self.bits,
         } // maybe set upper bits to 1?
+    }
+
+    fn set_all_bits_from(&self, other: &Self) {
+        self.bits |= &other.bits
     }
 }
 
@@ -215,6 +225,7 @@ pub struct Stats {
 pub struct Bits {
     pub rare: Bin,
     pub seen: Bin,
+    pub partial: Vec<Bin>,
 }
 
 // pub fn make_bitset(largest: Nimber) -> BitV {
@@ -227,12 +238,14 @@ impl Bits {
         Self {
             rare: Bin::make(0),
             seen: Bin::make(0),
+            partial: vec![Bin::make(0); rayon::current_num_threads()],
         }
     }
 
     pub fn resize(&mut self, largest_nimber: Nimber) {
         self.rare = Bin::make(largest_nimber);
         self.seen = Bin::make(largest_nimber);
+        self.partial = vec![Bin::make(largest_nimber); rayon::current_num_threads()];
     }
 }
 
@@ -458,12 +471,14 @@ impl Game {
     /// C is an empty set, then this algorithm still correctly identifies nimbers.
     pub fn rc(&mut self, n: usize) -> Nimber {
         self.bits.seen.zero_bits();
+        self.bits.partial.iter_mut().for_each(|x| x.zero_bits());
 
         self.set_seen_bits_from_some_moves(n);
         self.set_0th_bit_if_can_be_divided_in_half(n);
-        self.iterate_over_r_xor_c(n);
+        self.iterate_over_r_xor_c_mt(n);
 
-        self.prove(n)
+        self.prove_mt(n)
+        // self.prove(n)
     }
 
     pub fn rc_back(&mut self, n: usize) -> Nimber {
@@ -712,6 +727,91 @@ impl Game {
         nim
     }
 
+    fn prove_mt(&mut self, n: usize) -> Nimber {
+        let first_common = self
+            .bits
+            .seen
+            .find_first_unset_also_unset_in(&self.bits.rare);
+
+        let mut mex = self.bits.seen.copy_up_to_inclusive(first_common + 1);
+        let mut mex_partial = vec![mex.clone(); rayon::current_num_threads()];
+        // let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
+
+        let chunk_size = 1024;
+        // let chunk_size = 128;
+        let step = rayon::current_num_threads() * chunk_size;
+
+        for i in 1..self.rules.len() {
+            // if remaining_unset == 0 {
+            //     return first_common as Nimber;
+            // }
+
+            if self.rules[i].divide {
+                // let last_chunk = 0;
+                let end = (n - i) / 2;
+                let last_chunk = (end / step) * step;
+                for start in (1..last_chunk).step_by(step) {
+                    for par in mex_partial.iter_mut() {
+                        par.set_all_bits_from(&mex)
+                    }
+
+                    mex_partial.par_iter_mut().for_each(|par| {
+                        let idx = rayon::current_thread_index().unwrap();
+                        let shift = start + idx * chunk_size;
+
+                        for j in shift..shift + chunk_size {
+                            let a = self.nimbers.g[j];
+                            let b = self.nimbers.g[n - i - j];
+                            let loc = (a ^ b) as usize;
+
+                            if loc < first_common && !par.get(loc) {
+                                // if loc < first_common {
+                                par.set_bit(loc);
+                            }
+                        }
+                    });
+
+                    for par in mex_partial.iter() {
+                        mex.set_all_bits_from(par);
+                    }
+                    if mex.count_unset() == 1 {
+                        break;
+                    }
+
+                }
+
+                // println!("{end} {last_chunk}");
+
+                let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
+
+                for j in std::cmp::max(1, last_chunk)..=end {
+                    let a = self.nimbers.g[j];
+                    let b = self.nimbers.g[n - i - j];
+                    let loc = (a ^ b) as usize;
+
+                    if loc < first_common && !mex.get(loc) {
+                        // a rare value smaller than first_common and not previously observed found
+                        mex.set_bit(loc);
+                        remaining_unset -= 1;
+                        if remaining_unset == 0 {
+                            // all smaller values than first_common found, the value is the smallest
+                            // not observed common
+                            self.stats.prev_values = std::cmp::max(self.stats.prev_values, j);
+                            return first_common as Nimber;
+                            // break
+                        }
+                    }
+                }
+            }
+        }
+
+        let nim = mex.lowest_unset() as Nimber;
+        self.stats.latest_rare = nim;
+        self.stats.latest_rare_index = n;
+
+        nim
+    }
+
     fn prove_back(&mut self, n: usize) -> Nimber {
         let first_common = self
             .bits
@@ -775,6 +875,31 @@ impl Game {
         self.stats.latest_rare = nim;
         self.stats.latest_rare_index = n;
         panic!("unexpectedly, larger rare value found! G({}) = {}", n, nim)
+    }
+
+    fn iterate_over_r_xor_c_mt(&mut self, n: usize) {
+        // iterate over x ^ y such that x is in R
+        for i in 1..self.rules.len() {
+            if self.rules[i].divide {
+                let mut m = self.nimbers.rare.len();
+                while m > 0 && n <= i + self.nimbers.rare[m - 1].0 {
+                    m -= 1;
+                }
+                self.nimbers.rare[0..m]
+                    .par_chunks(1 + (m / rayon::current_num_threads()))
+                    .zip(self.bits.partial.par_iter_mut())
+                    .for_each(|(rs, bs)| {
+                        for (idx, x) in rs {
+                            let s = (x ^ self.nimbers.g[n - i - idx]) as usize;
+                            bs.set_bit(s);
+                        }
+                    });
+
+                for c in self.bits.partial.iter() {
+                    self.bits.seen.set_all_bits_from(&c);
+                }
+            }
+        }
     }
 
     fn iterate_over_r_xor_c(&mut self, n: usize) {
