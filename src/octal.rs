@@ -159,7 +159,7 @@ impl Bin {
         } // maybe set upper bits to 1?
     }
 
-    fn set_all_bits_from(&self, other: &Self) {
+    fn set_all_bits_from(&mut self, other: &Self) {
         self.bits |= &other.bits
     }
 }
@@ -608,6 +608,7 @@ impl Game {
         };
 
         if n % 100000 == 0 {
+            // if n % 1 == 0 {
             self.dump_stats(n, &start);
         }
 
@@ -735,73 +736,70 @@ impl Game {
 
         let mut mex = self.bits.seen.copy_up_to_inclusive(first_common + 1);
         let mut mex_partial = vec![mex.clone(); rayon::current_num_threads()];
-        // let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
+        // let mut remaining_unset = mex.count_unset();
 
-        let chunk_size = 1024;
-        // let chunk_size = 128;
+        let chunk_size = 4096;
         let step = rayon::current_num_threads() * chunk_size;
 
         for i in 1..self.rules.len() {
-            // if remaining_unset == 0 {
+            // if remaining_unset == 1 {
             //     return first_common as Nimber;
             // }
 
             if self.rules[i].divide {
                 // let last_chunk = 0;
                 let end = (n - i) / 2;
-                let last_chunk = (end / step) * step;
-                for start in (1..last_chunk).step_by(step) {
+                for start in (1..=end).step_by(step) {
                     for par in mex_partial.iter_mut() {
                         par.set_all_bits_from(&mex)
                     }
 
-                    mex_partial.par_iter_mut().for_each(|par| {
-                        let idx = rayon::current_thread_index().unwrap();
-                        let shift = start + idx * chunk_size;
-
-                        for j in shift..shift + chunk_size {
-                            let a = self.nimbers.g[j];
-                            let b = self.nimbers.g[n - i - j];
-                            let loc = (a ^ b) as usize;
-
-                            if loc < first_common && !par.get(loc) {
-                                // if loc < first_common {
-                                par.set_bit(loc);
+                    self.nimbers.g[start..std::cmp::min(end + 1, start + step)]
+                        .par_chunks(chunk_size)
+                        .zip(mex_partial.par_iter_mut())
+                        .enumerate()
+                        .for_each(|(idx, (xs, par))| //{println!("{}", idx);}
+                        {
+                            for (k, x) in xs.iter().enumerate() {
+                                let j = k + start + idx * chunk_size;
+                                let b = self.nimbers.g[n - i - j];
+                                let loc = (x ^ b) as usize;
+                                if loc < first_common && !par.get(loc) {
+                                    // if loc < first_common {
+                                    par.set_bit(loc);
+                                }
                             }
-                        }
-                    });
+                        });
+
+                    // mex_partial
+                    //     .par_iter_mut()
+                    //     .enumerate()
+                    //     .for_each(|(idx, par)| {
+                    //         // let idx = rayon::current_thread_index().unwrap();
+                    //         let shift = start + idx * chunk_size;
+                    //         let last = std::cmp::min(end + 1, shift + chunk_size);
+                    //         for j in shift..last {
+                    //             let a = self.nimbers.g[j];
+                    //             let b = self.nimbers.g[n - i - j];
+                    //             let loc = (a ^ b) as usize;
+
+                    //             if loc < first_common && !par.get(loc) {
+                    //                 // if loc < first_common {
+                    //                 par.set_bit(loc);
+                    //             }
+                    //         }
+                    //     });
 
                     for par in mex_partial.iter() {
                         mex.set_all_bits_from(par);
                     }
-                    if mex.count_unset() == 1 {
-                        break;
-                    }
 
+                    if mex.count_unset() == 1 {
+                        return first_common as Nimber;
+                    }
                 }
 
                 // println!("{end} {last_chunk}");
-
-                let mut remaining_unset = mex.count_unset() - 1; // -1 for mex[first_common]
-
-                for j in std::cmp::max(1, last_chunk)..=end {
-                    let a = self.nimbers.g[j];
-                    let b = self.nimbers.g[n - i - j];
-                    let loc = (a ^ b) as usize;
-
-                    if loc < first_common && !mex.get(loc) {
-                        // a rare value smaller than first_common and not previously observed found
-                        mex.set_bit(loc);
-                        remaining_unset -= 1;
-                        if remaining_unset == 0 {
-                            // all smaller values than first_common found, the value is the smallest
-                            // not observed common
-                            self.stats.prev_values = std::cmp::max(self.stats.prev_values, j);
-                            return first_common as Nimber;
-                            // break
-                        }
-                    }
-                }
             }
         }
 
