@@ -2,6 +2,7 @@
 use bitvec::prelude::*;
 use cfg_if;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::sync::{mpsc, Arc, RwLock};
@@ -285,6 +286,24 @@ impl Bin {
 
     fn set_all(&mut self, other: &Self) {
         self.bits |= other.bits;
+    }
+
+    fn count_unset_upto(&self, upto: usize) -> usize {
+        let x = self.bits.trailing_ones() as usize;
+        if x < upto {
+            x
+        } else {
+            upto + 1
+        }
+        // let mut cnt = 0;
+
+        // for i in 0..upto {
+        //     if !self.get(i) {
+        //         cnt += 1
+        //     }
+        // }
+
+        // return cnt;
     }
 }
 
