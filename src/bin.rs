@@ -47,9 +47,11 @@ impl Mmap {
         }
     }
 
-    fn at<'a>(&mut self, i: usize) -> octal::Nimber {
+    fn at(&mut self, i: usize) -> octal::Nimber {
         let len = self.buf.len();
-        if !(self.end <= i + len && i < self.end) {
+        let begin = self.end - len;
+        let outside_current_buf = i < begin || self.end <= i;
+        if outside_current_buf {
             self.end = ((i / len) + 1) * len;
             let mut p = self.path.clone();
             p.push_str(&self.end.to_string());
@@ -132,7 +134,7 @@ fn main() {
 
     let mut mem = Mem::new(path, max_tail_memory, max_tail_memory);
 
-    for i in 1..=last {
+    for i in 1..last {
         let n = mem.right.at(i) as usize;
 
         if n >= hm.len() {
@@ -152,6 +154,7 @@ fn main() {
 
 
     let mut found = false;
+    let mut longest = 0;
 
     for period in 1..=(last / 2) {
         if period % mem.right.buf.len() == 0 {
@@ -163,6 +166,8 @@ fn main() {
             start -= 1;
         }
 
+        longest = std::cmp::max(longest, last-period-start);
+
         if last >= 2 * start + 2 * period + rules_str.len() - 1 {
             println!("period start: {}\n", start);
             println!("period: {}\n", period);
@@ -173,5 +178,6 @@ fn main() {
 
     if !found {
         println!("no period :(");
+        println!("longest streak: {}", longest);
     }
 }
